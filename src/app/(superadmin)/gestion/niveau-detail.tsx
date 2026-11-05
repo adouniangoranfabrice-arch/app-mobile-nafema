@@ -1,3 +1,4 @@
+import FixedHeader from "@/components/ui/FixedHeader";
 import { fromISO } from "@/organisation/helpers";
 import { formatDate } from "@/utils/dates";
 import { Ionicons } from "@expo/vector-icons";
@@ -58,16 +59,18 @@ export default function NiveauDetail() {
     <View className="flex-1 bg-page">
       <StatusBar style="dark" />
 
+      <FixedHeader>
+        {header}
+      </FixedHeader>
+
       <ScrollView
         contentContainerStyle={{
-          paddingTop: insets.top + 12,
+          paddingTop: 12,
           paddingBottom: 32,
         }}
         showsVerticalScrollIndicator={false}
       >
         <View className="w-full max-w-[640px] gap-4 self-center px-5">
-          {header}
-
           {/* Carte principale */}
           <View className="rounded-3xl bg-primary p-5">
             <View className="flex-row items-center gap-3.5">

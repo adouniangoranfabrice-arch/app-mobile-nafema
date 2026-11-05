@@ -177,7 +177,10 @@ export const suggestLabel = (type: string, n: number) =>
 /** Statut calculé à partir de la date du jour */
 export type PeriodStatus = "ongoing" | "upcoming" | "done";
 
-export const periodStatus = (p: Period, now = new Date()): PeriodStatus => {
+export const periodStatus = (
+  p: Pick<Period, "start" | "end">,
+  now = new Date(),
+): PeriodStatus => {
   const endOfLastDay = new Date(
     p.end.getFullYear(),
     p.end.getMonth(),

@@ -14,14 +14,13 @@ export default function SchoolStats({
   start: boolean;
 }) {
   const { students } = useStudents();
-  const { years, periods } = useAcademic();
+  const { years } = useAcademic();
   const { records } = useOrganisation();
 
   const stats = computeSchoolStats({
     school,
     students,
     years,
-    periods,
     classes: records("classes"),
     niveaux: records("niveaux"),
     salles: records("salles"),
@@ -59,28 +58,6 @@ export default function SchoolStats({
           icon="easel-outline"
         />
       </View>
-
-      {stats.hasYear && (
-        <Card title="Année scolaire">
-          <Meter
-            start={start}
-            label="Jours écoulés"
-            part={stats.year.daysElapsed}
-            total={stats.year.daysTotal}
-          />
-          <Meter
-            start={start}
-            delay={120}
-            label={
-              stats.periods.current
-                ? `Périodes terminées (en cours : ${stats.periods.current})`
-                : "Périodes terminées"
-            }
-            part={stats.periods.done}
-            total={stats.periods.total}
-          />
-        </Card>
-      )}
 
       <Card title="Effectifs">
         <Meter

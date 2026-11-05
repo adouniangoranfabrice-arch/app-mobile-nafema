@@ -1,6 +1,7 @@
 import SearchBar from "@/components/ui/SearchBar";
 import Segmented from "@/components/ui/Segmented";
 import Select from "@/components/ui/Select";
+import FixedHeader from "@/components/ui/FixedHeader";
 import { useOrganisation } from "@/organisation/OrganisationContext";
 import { MONO } from "@/organisation/ui";
 import { normalize } from "@/utils/text";
@@ -9,11 +10,9 @@ import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function Attribution() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const { records, update } = useOrganisation();
 
   const [guard, setGuard] = useState("sanctum");
@@ -72,34 +71,36 @@ export default function Attribution() {
     <View className="flex-1 bg-page">
       <StatusBar style="dark" />
 
+      <FixedHeader>
+        {/* En-tête avec retour */}
+        <View className="flex-row items-center gap-3">
+          <Pressable
+            onPress={() => router.back()}
+            hitSlop={8}
+            className="h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm active:opacity-80"
+          >
+            <Ionicons name="chevron-back" size={22} color="#2B5EA8" />
+          </Pressable>
+          <View className="flex-1">
+            <Text className="font-inter-bold text-[22px] leading-7 text-ink">
+              Permissions par rôle
+            </Text>
+            <Text className="font-inter text-[13px] text-muted">
+              Gestion des permissions par rôle
+            </Text>
+          </View>
+        </View>
+      </FixedHeader>
+
       <ScrollView
         contentContainerStyle={{
-          paddingTop: insets.top + 12,
+          paddingTop: 12,
           paddingBottom: 32,
         }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
         <View className="w-full max-w-[640px] gap-4 self-center px-5">
-          {/* En-tête avec retour */}
-          <View className="flex-row items-center gap-3">
-            <Pressable
-              onPress={() => router.back()}
-              hitSlop={8}
-              className="h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm active:opacity-80"
-            >
-              <Ionicons name="chevron-back" size={22} color="#2B5EA8" />
-            </Pressable>
-            <View className="flex-1">
-              <Text className="font-inter-bold text-[22px] leading-7 text-ink">
-                Permissions par rôle
-              </Text>
-              <Text className="font-inter text-[13px] text-muted">
-                Gestion des permissions par rôle
-              </Text>
-            </View>
-          </View>
-
           {/* Guard + rôle */}
           <View>
             <Segmented

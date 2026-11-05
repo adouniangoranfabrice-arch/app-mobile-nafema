@@ -1,4 +1,5 @@
 import { api } from "@/api/client";
+import { fetchAllPages } from "@/api/pages";
 
 export type Cycle = {
   public_key: string;
@@ -6,20 +7,6 @@ export type Cycle = {
   name: string;
   order: number;
 };
-
-type CyclesResponse = {
-  success: boolean;
-  data: Cycle[];
-  pagination: {
-    per_page: number;
-    next_cursor: string | null;
-    prev_cursor: string | null;
-    next_page_url: string | null;
-    prev_page_url: string | null;
-  };
-};
-
-const PER_PAGE = 20;
 
 let stale = false;
 
@@ -37,28 +24,21 @@ export const takeCyclesStale = () => {
 
 /** Tous les cycles, page après page : ils sont peu nombreux et la recherche se fait dans l'application */
 export async function getCycles() {
-  const all = new Map<string, Cycle>();
-  let query: string | null = null;
-  do {
-    const response: { data: CyclesResponse } = await api.get<CyclesResponse>(
-      query ? `/cycles?${query}` : "/cycles",
-      { params: { per_page: PER_PAGE } },
-    );
-    const before = all.size;
-    response.data.data.forEach((c) => all.set(c.public_key, c));
-    // Une page sans rien de nouveau : on s'arrête, sinon on redemanderait sans fin
-    query =
-      all.size > before
-        ? (response.data.pagination.next_page_url?.split("?")[1] ?? null)
-        : null;
-  } while (query);
-  return [...all.values()].sort((a, b) => a.order - b.order);
+  const all = await fetchAllPages<Cycle>("/cycles", (c) => c.public_key);
+  return all.sort((a, b) => a.order - b.order);
 }
 
 /** Crée un cycle et renvoie le message de confirmation du serveur */
 export async function createCycle(cycle: Omit<Cycle, "public_key">) {
   const { data } = await api.post<{ message: string }>("/cycles", cycle);
   return data.message;
+}
+
+export async function updateCycle(
+  publicKey: string,
+  cycle: Omit<Cycle, "public_key">,
+) {
+  await api.put(`/cycles/${publicKey}`, cycle);
 }
 
 export async function deleteCycle(publicKey: string) {

@@ -1,4 +1,5 @@
 import Button from "@/components/ui/Button";
+import { showFormError, ToastHost } from "@/components/ui/Toast";
 import { Ionicons } from "@expo/vector-icons";
 import { ReactNode, useRef } from "react";
 import {
@@ -30,6 +31,7 @@ export function SheetModal({
       onRequestClose={onClose}
     >
       {visible ? children : null}
+      <ToastHost />
     </Modal>
   );
 }
@@ -58,8 +60,10 @@ export function FormSheet({
   const scrollRef = useRef<ScrollViewInstance>(null);
 
   const submit = () => {
-    if (onSubmit() === false)
+    if (onSubmit() === false) {
+      showFormError();
       scrollRef.current?.scrollTo({ y: 0, animated: true });
+    }
     // push("/(superadmin)/gestion/iepps");
   };
 

@@ -8,6 +8,8 @@ import {
 import { apiErrorMessage } from "@/api/client";
 import AddYearModal from "@/components/gestion/AddYearModal";
 import ActionButton from "@/components/ui/ActionButton";
+import FixedHeader from "@/components/ui/FixedHeader";
+import { showToast } from "@/components/ui/Toast";
 import { markAnneesStale } from "@/hooks/use-annees";
 import { useGestion } from "@/hooks/use-gestion";
 import { fromISO } from "@/organisation/helpers";
@@ -100,16 +102,18 @@ export default function AnneeDetail() {
     <View className="flex-1 bg-page">
       <StatusBar style="dark" />
 
+      <FixedHeader>
+        {header}
+      </FixedHeader>
+
       <ScrollView
         contentContainerStyle={{
-          paddingTop: insets.top + 12,
+          paddingTop: 12,
           paddingBottom: 32,
         }}
         showsVerticalScrollIndicator={false}
       >
         <View className="w-full max-w-[640px] gap-4 self-center px-5">
-          {header}
-
           {/* Carte principale */}
           <View className="rounded-3xl bg-primary p-5">
             <View className="flex-row items-center gap-3.5">
@@ -216,6 +220,7 @@ export default function AnneeDetail() {
           await updateAnnee(annee.public_key, data);
           setEditing(false);
           markAnneesStale();
+          showToast("Année scolaire modifiée avec succès.");
           router.back(); // retour à la liste, rechargée avec la modification
         }}
       />

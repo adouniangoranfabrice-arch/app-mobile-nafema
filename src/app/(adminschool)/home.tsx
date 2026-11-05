@@ -1,10 +1,12 @@
+import { getMe, User } from "@/api/auth";
 import { Fill } from "@/components/PlatformStats";
 import SchoolStats from "@/components/SchoolStats";
 import { useLogout } from "@/hooks/use-logout";
 import { useReveal } from "@/hooks/use-reveal";
+import { initials } from "@/utils/text";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
-import { ReactNode } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { Image, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -13,10 +15,14 @@ type IconName = keyof typeof Ionicons.glyphMap;
 /* ---------- Données de démonstration (à remplacer par ton API) ---------- */
 
 const SCHOOL = {
-  name: "Collège des Almadies",
-  place: "Dakar · Établissement privé",
+  name: "Collège des Almadies", // seulement pour les statistiques, encore fictives
   term: "1er trimestre · Semaine 5",
   open: true,
+};
+
+const SCHOOL_TYPES: Record<string, string> = {
+  PRIVE: "Établissement privé",
+  PUBLIC: "Établissement public",
 };
 
 const TEACHERS = 32;
@@ -60,6 +66,29 @@ export default function AdminHome() {
   const signOut = useLogout();
   const insets = useSafeAreaInsets();
   const { revealed, scrollProps, track } = useReveal();
+  const [user, setUser] = useState<User | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    getMe()
+      .then((me) => {
+        if (active) setUser(me);
+      })
+      .catch(() => {
+        if (active) setFailed(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const school = user?.etablissement;
+  const schoolName = user
+    ? (school?.name ?? "Aucun établissement")
+    : failed
+      ? "Établissement indisponible"
+      : "Chargement…";
 
   // Chiffres calculés à partir des données
   const totalStudents = GROUPS.reduce((s, g) => s + g.students, 0);
@@ -137,14 +166,20 @@ export default function AdminHome() {
                 Mon établissement
               </Text>
               <Text className="mt-1 font-inter text-[13px] text-muted">
-                Bonjour, Mariama · Année 2026–2027
+                Bonjour{user ? `, ${user.full_name}` : ""} · Année 2026–2027
               </Text>
             </View>
             <Pressable
               onPress={signOut}
               className="h-14 w-14 items-center justify-center rounded-full bg-soft active:opacity-80"
             >
-              <Text className="font-inter-bold text-base text-primary">MN</Text>
+              {user ? (
+                <Text className="font-inter-bold text-base text-primary">
+                  {initials(user.full_name)}
+                </Text>
+              ) : (
+                <Ionicons name="person-outline" size={22} color="#2B5EA8" />
+              )}
             </Pressable>
           </View>
 
@@ -156,11 +191,13 @@ export default function AdminHome() {
               </View>
               <View className="flex-1">
                 <Text className="font-inter-bold text-[22px] text-white">
-                  {SCHOOL.name}
+                  {schoolName}
                 </Text>
-                <Text className="font-inter text-[13px] text-white/70">
-                  {SCHOOL.place}
-                </Text>
+                {!!school && (
+                  <Text className="font-inter text-[13px] text-white/70">
+                    {SCHOOL_TYPES[school.type] ?? school.type}
+                  </Text>
+                )}
               </View>
             </View>
 

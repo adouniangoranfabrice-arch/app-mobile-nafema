@@ -1,5 +1,7 @@
 import AddStudentModal from "@/components/gestion/AddStudentModal";
 import ActionButton from "@/components/ui/ActionButton";
+import FixedHeader from "@/components/ui/FixedHeader";
+import { showToast } from "@/components/ui/Toast";
 import { useStudents } from "@/context/StudentsContext";
 import { fullName } from "@/data/students";
 import { useGestion } from "@/hooks/use-gestion";
@@ -73,16 +75,18 @@ export default function EleveDetail() {
     <View className="flex-1 bg-page">
       <StatusBar style="dark" />
 
+      <FixedHeader>
+        {header}
+      </FixedHeader>
+
       <ScrollView
         contentContainerStyle={{
-          paddingTop: insets.top + 12,
+          paddingTop: 12,
           paddingBottom: 32,
         }}
         showsVerticalScrollIndicator={false}
       >
         <View className="w-full max-w-[640px] gap-4 self-center px-5">
-          {header}
-
           {/* Carte principale */}
           <View className="rounded-3xl bg-primary p-5">
             <View className="flex-row items-center gap-3.5">
@@ -287,6 +291,7 @@ export default function EleveDetail() {
         onSave={(data) => {
           updateStudent(student.id, data);
           setEditing(false);
+          showToast("Élève modifié avec succès.");
         }}
       />
     </View>

@@ -5,6 +5,7 @@
 //   useFonts,
 // } from "@expo-google-fonts/inter";
 import AnimatedSplash from "@/components/AnimatedSplash";
+import { ToastHost } from "@/components/ui/Toast";
 import { Inter_400Regular } from "@expo-google-fonts/inter/400Regular";
 import { Inter_600SemiBold } from "@expo-google-fonts/inter/600SemiBold";
 import { Inter_700Bold } from "@expo-google-fonts/inter/700Bold";
@@ -36,11 +37,14 @@ export default function RootLayout() {
     return <AnimatedSplash onReady={hideNativeSplash} onDone={finishSplash} />;
 
   return (
-    <Stack
-      screenOptions={{
-        headerShown: false,
-        contentStyle: { backgroundColor: "#E5EAEB" },
-      }}
-    />
+    <>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: "#E5EAEB" },
+        }}
+      />
+      <ToastHost />
+    </>
   );
 }

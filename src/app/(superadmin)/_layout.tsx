@@ -1,5 +1,6 @@
 import { AcademicProvider } from "@/context/AcademicContext";
 import { DrenasProvider } from "@/context/DrenasContext";
+import { PedagogyProviders } from "@/context/PedagogyProviders";
 import { StudentsProvider } from "@/context/StudentsContext";
 import { OrganisationProvider } from "@/organisation/OrganisationContext";
 import { Ionicons } from "@expo/vector-icons";
@@ -24,6 +25,7 @@ export default function PlatformLayout() {
       <StudentsProvider>
         <DrenasProvider>
           <OrganisationProvider>
+            <PedagogyProviders>
             <Tabs
               screenOptions={{
                 headerShown: false,
@@ -82,6 +84,7 @@ export default function PlatformLayout() {
                 }}
               />
             </Tabs>
+            </PedagogyProviders>
           </OrganisationProvider>
         </DrenasProvider>
       </StudentsProvider>

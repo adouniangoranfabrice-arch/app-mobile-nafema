@@ -1,6 +1,6 @@
 import { Annee } from "@/api/annees";
 import { Cycle } from "@/api/cycles";
-import { Period } from "@/data/academic";
+import { Periode } from "@/api/periodes";
 import { Drena, Iepp } from "@/data/drenas";
 import { Student, fullName } from "@/data/students";
 import { Alert } from "react-native";
@@ -16,9 +16,23 @@ export function confirmDeleteYear(annee: Annee, onConfirm: () => void) {
   );
 }
 
-export function confirmDeletePeriod(period: Period, onConfirm: () => void) {
+export function confirmDeleteStudent(student: Student, onConfirm: () => void) {
+  Alert.alert(
+    "Supprimer cet élève ?",
+    `${fullName(student)} · ${student.school}\n\nCette action est irréversible.`,
+    [
+      { text: "Annuler", style: "cancel" },
+      { text: "Supprimer", style: "destructive", onPress: onConfirm },
+    ],
+  );
+}
+
+export function confirmDeletePeriode(
+  periode: Pick<Periode, "name" | "cycle_name" | "is_locked">,
+  onConfirm: () => void,
+) {
   // Une période verrouillée ne peut pas être supprimée
-  if (period.locked) {
+  if (periode.is_locked) {
     Alert.alert(
       "Période verrouillée",
       "Déverrouille cette période (en la modifiant) avant de pouvoir la supprimer.",
@@ -28,18 +42,7 @@ export function confirmDeletePeriod(period: Period, onConfirm: () => void) {
 
   Alert.alert(
     "Supprimer cette période ?",
-    `${period.label} · ${period.cycle}\n\nCette action est irréversible.`,
-    [
-      { text: "Annuler", style: "cancel" },
-      { text: "Supprimer", style: "destructive", onPress: onConfirm },
-    ],
-  );
-}
-
-export function confirmDeleteStudent(student: Student, onConfirm: () => void) {
-  Alert.alert(
-    "Supprimer cet élève ?",
-    `${fullName(student)} · ${student.school}\n\nCette action est irréversible.`,
+    `${periode.name} · ${periode.cycle_name}\n\nCette action est irréversible.`,
     [
       { text: "Annuler", style: "cancel" },
       { text: "Supprimer", style: "destructive", onPress: onConfirm },

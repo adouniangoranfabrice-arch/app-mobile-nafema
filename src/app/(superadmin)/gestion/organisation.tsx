@@ -2,6 +2,8 @@ import PagedHint from "@/components/ui/PagedHint";
 import SearchFilterBar from "@/components/ui/SearchFilterBar";
 import Segmented from "@/components/ui/Segmented";
 import Select from "@/components/ui/Select";
+import FixedHeader from "@/components/ui/FixedHeader";
+import { showToast } from "@/components/ui/Toast";
 import { useGestion } from "@/hooks/use-gestion";
 import { usePaged } from "@/hooks/use-paged";
 import EntityFormModal from "@/organisation/EntityFormModal";
@@ -21,7 +23,6 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function OrganisationScreen() {
   const { entity } = useLocalSearchParams<{ entity: string }>();
@@ -51,7 +52,6 @@ export default function OrganisationScreen() {
 
 function EntityList({ config }: { config: EntityConfig }) {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const org = useOrganisation();
   const { records, add, update, remove, options, usage } = org;
   const { canEdit, href } = useGestion();
@@ -137,9 +137,92 @@ function EntityList({ config }: { config: EntityConfig }) {
     <View className="flex-1 bg-page">
       <StatusBar style="dark" />
 
+      <FixedHeader>
+        {/* En-tête avec retour */}
+        <View className="flex-row items-center gap-3">
+          <Pressable
+            onPress={() => router.back()}
+            hitSlop={8}
+            className="h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm active:opacity-80"
+          >
+            <Ionicons name="chevron-back" size={22} color="#2B5EA8" />
+          </Pressable>
+          <View className="flex-1">
+            <Text className="font-inter-bold text-[20px] leading-8 text-ink">
+              {config.title}
+            </Text>
+            <Text className="font-inter text-[13px] text-muted">
+              {visible.length} {config.countLabel} {shown(config)}
+            </Text>
+          </View>
+        </View>
+
+        {/* Bascule (ex. Guard : web / sanctum) */}
+        {config.segment && (
+          <Segmented
+            label={config.segment.label}
+            value={segment}
+            onChange={setSegment}
+            options={config.segment.options}
+          />
+        )}
+
+        {/* Recherche + Filtrer */}
+        <SearchFilterBar
+          query={query}
+          onQueryChange={setQuery}
+          placeholder={config.searchPlaceholder}
+          activeCount={activeFilters}
+          onReset={resetFilters}
+        >
+          {(config.filters ?? []).map((f) => {
+            const field = config.fields.find((x) => x.key === f.field);
+            if (!field) return null;
+            const opts =
+              field.type === "ref" && field.ref
+                ? options(field.ref)
+                : (field.options ?? []);
+            return (
+              <Select
+                key={f.field}
+                label={field.label}
+                icon={field.icon ?? "list-outline"}
+                value={filterOf(f.field)}
+                onChange={(v) =>
+                  setFilters((prev) => ({ ...prev, [f.field]: v }))
+                }
+                options={[{ value: "all", label: f.allLabel }, ...opts]}
+              />
+            );
+          })}
+          <Segmented
+            label="Ordre"
+            value={order}
+            onChange={setOrder}
+            options={[
+              { value: "asc", label: "Croissant" },
+              { value: "desc", label: "Décroissant" },
+            ]}
+          />
+        </SearchFilterBar>
+
+        {/* Bouton d'ajout */}
+        {canEdit && (
+          <Pressable
+            onPress={() => setAdding(true)}
+            className="h-[54px] flex-row items-center justify-center gap-2 rounded-2xl bg-primary active:opacity-80"
+          >
+            <Ionicons name="add" size={22} color="#FFFFFF" />
+            <Text className="font-inter-semibold text-base text-white">
+              {newWord(config)} {config.singular}
+            </Text>
+          </Pressable>
+        )}
+      </FixedHeader>
+
       <ScrollView
         contentContainerStyle={{
-          paddingTop: insets.top + 12,
+          paddingTop: 12,
           paddingBottom: 32,
         }}
         keyboardShouldPersistTaps="handled"
@@ -147,87 +230,6 @@ function EntityList({ config }: { config: EntityConfig }) {
         {...scrollProps}
       >
         <View className="w-full max-w-[640px] gap-4 self-center px-5">
-          {/* En-tête avec retour */}
-          <View className="flex-row items-center gap-3">
-            <Pressable
-              onPress={() => router.back()}
-              hitSlop={8}
-              className="h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm active:opacity-80"
-            >
-              <Ionicons name="chevron-back" size={22} color="#2B5EA8" />
-            </Pressable>
-            <View className="flex-1">
-              <Text className="font-inter-bold text-[20px] leading-8 text-ink">
-                {config.title}
-              </Text>
-              <Text className="font-inter text-[13px] text-muted">
-                {visible.length} {config.countLabel} {shown(config)}
-              </Text>
-            </View>
-          </View>
-
-          {/* Bascule (ex. Guard : web / sanctum) */}
-          {config.segment && (
-            <Segmented
-              label={config.segment.label}
-              value={segment}
-              onChange={setSegment}
-              options={config.segment.options}
-            />
-          )}
-
-          {/* Recherche + Filtrer */}
-          <SearchFilterBar
-            query={query}
-            onQueryChange={setQuery}
-            placeholder={config.searchPlaceholder}
-            activeCount={activeFilters}
-            onReset={resetFilters}
-          >
-            {(config.filters ?? []).map((f) => {
-              const field = config.fields.find((x) => x.key === f.field);
-              if (!field) return null;
-              const opts =
-                field.type === "ref" && field.ref
-                  ? options(field.ref)
-                  : (field.options ?? []);
-              return (
-                <Select
-                  key={f.field}
-                  label={field.label}
-                  icon={field.icon ?? "list-outline"}
-                  value={filterOf(f.field)}
-                  onChange={(v) =>
-                    setFilters((prev) => ({ ...prev, [f.field]: v }))
-                  }
-                  options={[{ value: "all", label: f.allLabel }, ...opts]}
-                />
-              );
-            })}
-            <Segmented
-              label="Ordre"
-              value={order}
-              onChange={setOrder}
-              options={[
-                { value: "asc", label: "Croissant" },
-                { value: "desc", label: "Décroissant" },
-              ]}
-            />
-          </SearchFilterBar>
-
-          {/* Bouton d'ajout */}
-          {canEdit && (
-            <Pressable
-              onPress={() => setAdding(true)}
-              className="h-[54px] flex-row items-center justify-center gap-2 rounded-2xl bg-primary active:opacity-80"
-            >
-              <Ionicons name="add" size={22} color="#FFFFFF" />
-              <Text className="font-inter-semibold text-base text-white">
-                {newWord(config)} {config.singular}
-              </Text>
-            </Pressable>
-          )}
-
           {/* Liste */}
           {visible.length === 0 ? (
             <View className="items-center rounded-3xl bg-white py-12">
@@ -353,6 +355,7 @@ function EntityList({ config }: { config: EntityConfig }) {
           // Affiche le guard choisi dans le formulaire, sinon l'élément semble avoir disparu
           if (config.segment) setSegment(String(values[config.segment.field]));
           closeForm();
+          showToast(editing ? "Modifications enregistrées." : "Ajout enregistré.");
         }}
       />
     </View>

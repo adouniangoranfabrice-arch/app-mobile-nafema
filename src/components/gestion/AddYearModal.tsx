@@ -4,6 +4,7 @@ import { apiErrorMessage } from "@/api/client";
 import Button from "@/components/ui/Button";
 import DateField from "@/components/ui/DateField";
 import Select from "@/components/ui/Select";
+import { showFormError, showToast, ToastHost } from "@/components/ui/Toast";
 import { fromISO, toISO } from "@/organisation/helpers";
 import { yearLabel } from "@/utils/dates";
 import { Ionicons } from "@expo/vector-icons";
@@ -50,6 +51,7 @@ export default function AddYearModal({
           onSave={onSave}
         />
       )}
+      <ToastHost />
     </Modal>
   );
 }
@@ -122,7 +124,10 @@ function YearForm({ year, existing, onClose, onSave }: FormProps) {
       next.end = "La date de fin doit être après la date de début";
 
     setErrors(next);
-    if (Object.keys(next).length > 0) return;
+    if (Object.keys(next).length > 0) {
+      showFormError();
+      return;
+    }
 
     setSaving(true);
     setSaveError("");
@@ -135,7 +140,9 @@ function YearForm({ year, existing, onClose, onSave }: FormProps) {
         etablissement: school,
       });
     } catch (error) {
-      setSaveError(apiErrorMessage(error));
+      const message = apiErrorMessage(error);
+      setSaveError(message);
+      showToast(message, "error");
       setSaving(false);
     }
   };

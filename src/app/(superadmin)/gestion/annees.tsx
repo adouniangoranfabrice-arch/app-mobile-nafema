@@ -10,6 +10,7 @@ import { apiErrorMessage } from "@/api/client";
 import AddYearModal from "@/components/gestion/AddYearModal";
 import ActionButton from "@/components/ui/ActionButton";
 import SearchBar from "@/components/ui/SearchBar";
+import { showToast } from "@/components/ui/Toast";
 import { useAnnees } from "@/hooks/use-annees";
 import { useGestion } from "@/hooks/use-gestion";
 import { fromISO } from "@/organisation/helpers";
@@ -135,6 +136,19 @@ export default function Annees() {
             onChangeText={setQuery}
             placeholder="Rechercher une année ou un établissement"
           />
+
+          {/* Bouton d'ajout */}
+          {canEdit && (
+            <Pressable
+              onPress={() => setAdding(true)}
+              className="h-[54px] flex-row items-center justify-center gap-2 rounded-2xl bg-primary active:opacity-80"
+            >
+              <Ionicons name="add" size={22} color="#FFFFFF" />
+              <Text className="font-inter-semibold text-base text-white">
+                Ajouter une année scolaire
+              </Text>
+            </Pressable>
+          )}
         </View>
       </View>
 
@@ -151,19 +165,6 @@ export default function Annees() {
         onEndReachedThreshold={0.5}
         ListHeaderComponent={
           <View className="w-full max-w-[640px] gap-4 self-center px-5 pb-4">
-            {/* Bouton d'ajout */}
-            {canEdit && (
-              <Pressable
-                onPress={() => setAdding(true)}
-                className="h-[54px] flex-row items-center justify-center gap-2 rounded-2xl bg-primary active:opacity-80"
-              >
-                <Ionicons name="add" size={22} color="#FFFFFF" />
-                <Text className="font-inter-semibold text-base text-white">
-                  Ajouter une année scolaire
-                </Text>
-              </Pressable>
-            )}
-
             {q !== "" && (
               <Text className="font-inter text-xs text-muted">
                 {visible.length} résultat{plural(visible.length)}
@@ -233,12 +234,20 @@ export default function Annees() {
         existing={annees}
         onClose={closeForm}
         onSave={async (data) => {
-          if (editing) await updateAnnee(editing.public_key, data);
-          else await createAnnee(data);
+          if (editing) {
+            await updateAnnee(editing.public_key, data);
+            closeForm();
+            refresh();
+            showToast("Année scolaire modifiée avec succès.");
+            return;
+          }
+          const message = await createAnnee(data);
           closeForm();
           refresh();
+          showToast(message ?? "Année scolaire créée avec succès.");
         }}
       />
+
     </View>
   );
 }

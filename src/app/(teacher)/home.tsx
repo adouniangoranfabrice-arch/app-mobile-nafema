@@ -1,9 +1,11 @@
+import { getMe, User } from "@/api/auth";
 import { useLogout } from "@/hooks/use-logout";
-import { TEACHER_SCHOOL, useTeacherClasses } from "@/hooks/use-teacher-classes";
+import { useTeacherClasses } from "@/hooks/use-teacher-classes";
+import { initials } from "@/utils/text";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { Href, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { ReactNode, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { Image, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -132,6 +134,23 @@ export default function TeacherHome() {
   const router = useRouter();
   const teacherClasses = useTeacherClasses();
   const [selectedId, setSelectedId] = useState("");
+  const [user, setUser] = useState<User | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    getMe()
+      .then((me) => {
+        if (active) setUser(me);
+      })
+      .catch(() => {}); // sans profil, l'accueil reste utilisable : « Bonjour » sans nom
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const userDetail = [user?.personnel?.profession, user?.etablissement?.name]
+    .filter(Boolean)
+    .join(" · ");
 
   // Les vraies classes, avec leur activité fictive
   const classes = teacherClasses.map((c) => ({
@@ -214,22 +233,30 @@ export default function TeacherHome() {
                 {today}
               </Text>
               <Text className="mt-1 font-inter-bold text-[26px] leading-8 text-ink">
-                Bonjour, M. Diop
+                Bonjour{user ? `, ${user.full_name}` : ""}
               </Text>
-              <Text className="mt-1 font-inter text-[13px] text-muted">
-                Mathématiques · {TEACHER_SCHOOL}
-              </Text>
+              {!!userDetail && (
+                <Text className="mt-1 font-inter text-[13px] text-muted">
+                  {userDetail}
+                </Text>
+              )}
             </View>
             <Pressable
               onPress={signOut}
               className="h-14 w-14 items-center justify-center rounded-full bg-soft active:opacity-80"
             >
-              <Text className="font-inter-bold text-base text-primary">MD</Text>
+              {user ? (
+                <Text className="font-inter-bold text-base text-primary">
+                  {initials(user.full_name)}
+                </Text>
+              ) : (
+                <Ionicons name="person-outline" size={22} color="#2B5EA8" />
+              )}
             </Pressable>
           </View>
 
           {/* Prochain cours */}
-          {nextCourse && (
+          {/* {nextCourse && (
             <View className="rounded-3xl bg-primary p-5">
               <View className="flex-row items-start justify-between">
                 <Text className="font-inter-bold text-xs tracking-wider text-accent">
@@ -253,12 +280,9 @@ export default function TeacherHome() {
                   size={20}
                   color="#2B5EA8"
                 />
-                <Text className="font-inter-semibold text-[15px] text-primary">
-                  Faire l'appel
-                </Text>
               </Pressable>
             </View>
-          )}
+          )} */}
 
           {/* Statistiques */}
           <View className="flex-row gap-3">

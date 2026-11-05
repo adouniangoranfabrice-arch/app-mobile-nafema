@@ -1,6 +1,7 @@
 import { apiErrorMessage } from "@/api/client";
 import { FormSheet, SheetModal } from "@/components/ui/FormSheet";
 import Input from "@/components/ui/Input";
+import { showToast } from "@/components/ui/Toast";
 import { Drena } from "@/data/drenas";
 import { useState } from "react";
 import { Text } from "react-native";
@@ -57,7 +58,9 @@ function DrenaForm({
     try {
       await onSave(data);
     } catch (error) {
-      setSaveError(apiErrorMessage(error));
+      const message = apiErrorMessage(error);
+      setSaveError(message);
+      showToast(message, "error");
       setSaving(false);
     }
   };

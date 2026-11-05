@@ -3,6 +3,7 @@ import CheckboxRow from "@/components/ui/CheckboxRow";
 import DateField from "@/components/ui/DateField";
 import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
+import { showFormError, ToastHost } from "@/components/ui/Toast";
 import { useAcademic } from "@/context/AcademicContext";
 import { SCHOOL_NAMES } from "@/data/academic";
 import { useOrganisation } from "@/organisation/OrganisationContext";
@@ -52,6 +53,7 @@ export default function AddStudentModal({
           onSave={onSave}
         />
       )}
+      <ToastHost />
     </Modal>
   );
 }
@@ -152,6 +154,7 @@ function StudentForm({ student, existing, onClose, onSave }: FormProps) {
 
     setErrors(next);
     if (Object.keys(next).length > 0) {
+      showFormError();
       scrollRef.current?.scrollTo({ y: 0, animated: true });
       return;
     }

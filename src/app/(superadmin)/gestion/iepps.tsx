@@ -4,6 +4,8 @@ import SearchFilterBar from "@/components/ui/SearchFilterBar";
 import Segmented from "@/components/ui/Segmented";
 import PagedHint from "@/components/ui/PagedHint";
 import Select from "@/components/ui/Select";
+import FixedHeader from "@/components/ui/FixedHeader";
+import { showToast } from "@/components/ui/Toast";
 import { useDrenas } from "@/context/DrenasContext";
 import { Iepp, toIeppDren } from "@/data/drenas";
 import { useAllDrenas } from "@/hooks/use-all-drenas";
@@ -15,20 +17,17 @@ import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useMemo, useState } from "react";
 import {
-  Alert,
   Platform,
   Pressable,
   ScrollView,
   Text,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const MONO = Platform.select({ ios: "Menlo", default: "monospace" });
 
 export default function Iepps() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const { drenas, iepps, addIepp, updateIepp, deleteIepp } = useDrenas();
 
   const [query, setQuery] = useState("");
@@ -88,9 +87,83 @@ export default function Iepps() {
     <View className="flex-1 bg-page">
       <StatusBar style="dark" />
 
+      <FixedHeader>
+        {/* En-tête avec retour */}
+        <View className="flex-row items-center gap-3">
+          <Pressable
+            onPress={() => router.back()}
+            hitSlop={8}
+            className="h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm active:opacity-80"
+          >
+            <Ionicons name="chevron-back" size={22} color="#2B5EA8" />
+          </Pressable>
+          <View className="flex-1">
+            <Text className="font-inter-bold text-[20px] leading-8 text-ink">
+              IEPPs
+            </Text>
+            <Text className="font-inter text-[13px] text-muted">
+              {visible.length} IEPP(s) affichée(s)
+            </Text>
+          </View>
+        </View>
+
+        {/* Recherche + Filtrer */}
+        <SearchFilterBar
+          query={query}
+          onQueryChange={setQuery}
+          placeholder="Rechercher par nom…"
+          activeCount={activeFilters}
+          onReset={resetFilters}
+        >
+          <Select
+            label="DRENA"
+            icon="map-outline"
+            value={drenaFilter}
+            onChange={setDrenaFilter}
+            options={[
+              { value: "all", label: "Toutes les DRENA" },
+              ...[...drenas]
+                .sort((a, b) =>
+                  a.name.localeCompare(b.name, "fr", { numeric: true }),
+                )
+                .map((d) => ({ value: d.public_key, label: d.name })),
+            ]}
+          />
+          <Segmented
+            label="Trier par"
+            value={sortBy}
+            onChange={setSortBy}
+            options={[
+              { value: "name", label: "Nom" },
+              { value: "code", label: "Code" },
+            ]}
+          />
+          <Segmented
+            label="Ordre"
+            value={order}
+            onChange={setOrder}
+            options={[
+              { value: "asc", label: "A → Z" },
+              { value: "desc", label: "Z → A" },
+            ]}
+          />
+        </SearchFilterBar>
+
+        {/* Bouton d'ajout */}
+        <Pressable
+          onPress={() => setAdding(true)}
+          className="h-[54px] flex-row items-center justify-center gap-2 rounded-2xl bg-primary active:opacity-80"
+        >
+          <Ionicons name="add" size={22} color="#FFFFFF" />
+          <Text className="font-inter-semibold text-base text-white">
+            Nouvelle IEPP
+          </Text>
+        </Pressable>
+      </FixedHeader>
+
       <ScrollView
         contentContainerStyle={{
-          paddingTop: insets.top + 12,
+          paddingTop: 12,
           paddingBottom: 32,
         }}
         keyboardShouldPersistTaps="handled"
@@ -98,78 +171,6 @@ export default function Iepps() {
         {...scrollProps}
       >
         <View className="w-full max-w-[640px] gap-4 self-center px-5">
-          {/* En-tête avec retour */}
-          <View className="flex-row items-center gap-3">
-            <Pressable
-              onPress={() => router.back()}
-              hitSlop={8}
-              className="h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm active:opacity-80"
-            >
-              <Ionicons name="chevron-back" size={22} color="#2B5EA8" />
-            </Pressable>
-            <View className="flex-1">
-              <Text className="font-inter-bold text-[20px] leading-8 text-ink">
-                IEPPs
-              </Text>
-              <Text className="font-inter text-[13px] text-muted">
-                {visible.length} IEPP(s) affichée(s)
-              </Text>
-            </View>
-          </View>
-
-          {/* Recherche + Filtrer */}
-          <SearchFilterBar
-            query={query}
-            onQueryChange={setQuery}
-            placeholder="Rechercher par nom…"
-            activeCount={activeFilters}
-            onReset={resetFilters}
-          >
-            <Select
-              label="DRENA"
-              icon="map-outline"
-              value={drenaFilter}
-              onChange={setDrenaFilter}
-              options={[
-                { value: "all", label: "Toutes les DRENA" },
-                ...[...drenas]
-                  .sort((a, b) =>
-                    a.name.localeCompare(b.name, "fr", { numeric: true }),
-                  )
-                  .map((d) => ({ value: d.public_key, label: d.name })),
-              ]}
-            />
-            <Segmented
-              label="Trier par"
-              value={sortBy}
-              onChange={setSortBy}
-              options={[
-                { value: "name", label: "Nom" },
-                { value: "code", label: "Code" },
-              ]}
-            />
-            <Segmented
-              label="Ordre"
-              value={order}
-              onChange={setOrder}
-              options={[
-                { value: "asc", label: "A → Z" },
-                { value: "desc", label: "Z → A" },
-              ]}
-            />
-          </SearchFilterBar>
-
-          {/* Bouton d'ajout */}
-          <Pressable
-            onPress={() => setAdding(true)}
-            className="h-[54px] flex-row items-center justify-center gap-2 rounded-2xl bg-primary active:opacity-80"
-          >
-            <Ionicons name="add" size={22} color="#FFFFFF" />
-            <Text className="font-inter-semibold text-base text-white">
-              Nouvelle IEPP
-            </Text>
-          </Pressable>
-
           {/* Liste : Code, Nom, DRENA, Actions */}
           {visible.length === 0 ? (
             <View className="items-center rounded-3xl bg-white py-12">
@@ -252,6 +253,7 @@ export default function Iepps() {
           if (editing) {
             updateIepp(editing.public_key, data);
             closeForm();
+            showToast("IEPP modifiée avec succès.");
             return;
           }
           const drena = realDrenas.drenas.find(
@@ -264,7 +266,7 @@ export default function Iepps() {
           });
           addIepp({ ...iepp, dren: iepp.dren ?? toIeppDren(drena) });
           closeForm();
-          Alert.alert("IEPP créée", message);
+          showToast(message);
         }}
       />
     </View>

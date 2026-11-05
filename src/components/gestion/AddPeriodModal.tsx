@@ -1,325 +1,283 @@
-import Button from "@/components/ui/Button";
+import { Annee, getAllAnnees } from "@/api/annees";
+import { apiErrorMessage } from "@/api/client";
+import { Cycle, getCycles } from "@/api/cycles";
+import { Periode, PeriodeData } from "@/api/periodes";
 import CheckboxRow from "@/components/ui/CheckboxRow";
 import DateField from "@/components/ui/DateField";
+import { FormSheet, SheetModal } from "@/components/ui/FormSheet";
 import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
-import {
-    AcademicYear,
-    CYCLES,
-    PERIOD_TYPES,
-    Period,
-    suggestLabel,
-} from "@/data/academic";
-import { day, formatDate, yearLabel } from "@/utils/dates";
-import { Ionicons } from "@expo/vector-icons";
-import { useState } from "react";
-import {
-    Modal,
-    Platform,
-    Pressable,
-    ScrollView,
-    Text,
-    View,
-} from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { showToast } from "@/components/ui/Toast";
+import { PERIOD_TYPES, suggestLabel } from "@/data/academic";
+import { fromISO, toISO } from "@/organisation/helpers";
+import { useEffect, useState } from "react";
+import { Text } from "react-native";
 
 type Props = {
   visible: boolean;
-  period?: Period | null; // si fourni : mode modification
-  years: AcademicYear[];
-  existing: Period[];
+  period?: Periode | null; // si fourni : mode modification
   onClose: () => void;
-  onSave: (period: Omit<Period, "id">) => void;
+  onSave: (period: PeriodeData) => Promise<void>;
 };
 
 export default function AddPeriodModal({
   visible,
   period,
-  years,
-  existing,
   onClose,
   onSave,
 }: Props) {
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      presentationStyle="pageSheet"
-      onRequestClose={onClose}
-    >
-      {/* Monté seulement quand le modal est visible : formulaire réinitialisé à chaque ouverture */}
-      {visible && (
-        <PeriodForm
-          key={period?.id ?? "new"}
-          period={period ?? null}
-          years={years}
-          existing={existing}
-          onClose={onClose}
-          onSave={onSave}
-        />
-      )}
-    </Modal>
+    <SheetModal visible={visible} onClose={onClose}>
+      <PeriodForm
+        key={period?.public_key ?? "new"}
+        period={period ?? null}
+        onClose={onClose}
+        onSave={onSave}
+      />
+    </SheetModal>
   );
 }
 
-type Errors = {
-  year?: string;
-  cycle?: string;
-  number?: string;
-  label?: string;
-  start?: string;
-  end?: string;
-};
+type Errors = Partial<
+  Record<"annee" | "cycle" | "ordre" | "name" | "debut" | "fin", string>
+>;
 
-type FormProps = {
-  period: Period | null;
-  years: AcademicYear[];
-  existing: Period[];
-  onClose: () => void;
-  onSave: (period: Omit<Period, "id">) => void;
-};
-
-function PeriodForm({ period, years, existing, onClose, onSave }: FormProps) {
-  const insets = useSafeAreaInsets();
+function PeriodForm({
+  period,
+  onClose,
+  onSave,
+}: Omit<Props, "visible" | "period"> & { period: Periode | null }) {
   const isEdit = !!period;
 
-  const [yearId, setYearId] = useState(period?.yearId ?? "");
-  const [cycle, setCycle] = useState(period?.cycle ?? "");
-  const [number, setNumber] = useState(String(period?.number ?? 1));
+  const [annees, setAnnees] = useState<Annee[] | null>(null);
+  const [cycles, setCycles] = useState<Cycle[] | null>(null);
+  const [choicesFailed, setChoicesFailed] = useState(false);
+
+  const [annee, setAnnee] = useState(period?.annee_public_key ?? "");
+  const [cycle, setCycle] = useState(period?.cycle_public_key ?? "");
+  const [ordre, setOrdre] = useState(String(period?.ordre ?? 1));
   const [type, setType] = useState(period?.type ?? "TRIMESTRE");
-  const [label, setLabel] = useState(
-    period?.label ?? suggestLabel("TRIMESTRE", 1),
+  const [name, setName] = useState(
+    period?.name ?? suggestLabel("TRIMESTRE", 1),
   );
-  const [labelEdited, setLabelEdited] = useState(isEdit); // le libellé n'est plus suggéré une fois modifié à la main
-  const [start, setStart] = useState<Date | null>(period?.start ?? null);
-  const [end, setEnd] = useState<Date | null>(period?.end ?? null);
-  const [locked, setLocked] = useState(period?.locked ?? false);
+  const [nameEdited, setNameEdited] = useState(isEdit); // le libellé n'est plus suggéré une fois modifié à la main
+  const [debut, setDebut] = useState<Date | null>(
+    period ? fromISO(period.debut) : null,
+  );
+  const [fin, setFin] = useState<Date | null>(
+    period ? fromISO(period.fin) : null,
+  );
+  const [locked, setLocked] = useState(!!period?.is_locked);
   const [errors, setErrors] = useState<Errors>({});
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
-  const others = existing.filter((p) => p.id !== period?.id);
-  const selectedYear = years.find((y) => y.id === yearId);
+  // Les vraies années et les vrais cycles, le serveur attend leur public_key
+  useEffect(() => {
+    let active = true;
+    Promise.all([getAllAnnees(), getCycles()])
+      .then(([allAnnees, allCycles]) => {
+        if (!active) return;
+        setAnnees(allAnnees);
+        setCycles(allCycles);
+      })
+      .catch(() => {
+        if (active) setChoicesFailed(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
-  const yearOptions = [...years]
-    .sort((a, b) => b.start.getTime() - a.start.getTime())
-    .map((y) => ({
-      value: y.id,
-      label: `${yearLabel(y.start, y.end)} · ${y.school}`,
-    }));
+  // En modification, la valeur actuelle reste affichée pendant le chargement
+  const anneeOptions =
+    annees?.map((a) => ({
+      value: a.public_key,
+      label: `${a.name}`,
+    })) ??
+    (period
+      ? [{ value: period.annee_public_key, label: period.annee_name }]
+      : []);
+  const cycleOptions =
+    cycles?.map((c) => ({ value: c.public_key, label: c.name })) ??
+    (period
+      ? [{ value: period.cycle_public_key, label: period.cycle_name }]
+      : []);
+  const typeOptions = [...new Set([...PERIOD_TYPES, type])].map((t) => ({
+    value: t,
+    label: t,
+  }));
 
+  const selectedYear = annees?.find((a) => a.public_key === annee);
+
+  const hasErrors = Object.values(errors).some(Boolean);
   const clear = (key: keyof Errors) =>
     setErrors((e) => ({ ...e, [key]: undefined }));
 
   // Le libellé se met à jour tout seul tant qu'on ne l'a pas écrit soi-même
-  const onNumberChange = (text: string) => {
+  const onOrdreChange = (text: string) => {
     const clean = text.replace(/[^0-9]/g, "");
-    setNumber(clean);
-    clear("number");
+    setOrdre(clean);
+    clear("ordre");
     const n = parseInt(clean, 10);
-    if (!labelEdited && n > 0) setLabel(suggestLabel(type, n));
+    if (!nameEdited && n > 0) setName(suggestLabel(type, n));
   };
 
   const onTypeChange = (value: string) => {
     setType(value);
-    const n = parseInt(number, 10);
-    if (!labelEdited && n > 0) setLabel(suggestLabel(value, n));
+    const n = parseInt(ordre, 10);
+    if (!nameEdited && n > 0) setName(suggestLabel(value, n));
+  };
+
+  const save = async (data: PeriodeData) => {
+    setSaving(true);
+    setSaveError("");
+    try {
+      await onSave(data);
+    } catch (error) {
+      const message = apiErrorMessage(error);
+      setSaveError(message);
+      showToast(message, "error");
+      setSaving(false);
+    }
   };
 
   const submit = () => {
+    if (saving) return;
     const next: Errors = {};
-    const n = parseInt(number, 10);
+    const n = parseInt(ordre, 10);
 
-    if (!yearId) next.year = "Choisis une année scolaire";
+    if (!annee) next.annee = "Choisis une année scolaire";
     if (!cycle) next.cycle = "Choisis un cycle";
-    if (!number || !(n >= 1))
-      next.number = "Numéro invalide (entier à partir de 1)";
-    if (!label.trim()) next.label = "Le libellé est obligatoire";
-    if (!start) next.start = "Choisis la date de début";
-    if (!end) next.end = "Choisis la date de fin";
-
-    if (start && end) {
-      if (day(end) <= day(start)) {
-        next.end = "La date de fin doit être après la date de début";
-      } else if (
-        selectedYear &&
-        (day(start) < day(selectedYear.start) ||
-          day(end) > day(selectedYear.end))
-      ) {
-        next.end = `Les dates doivent être comprises entre le ${formatDate(selectedYear.start)} et le ${formatDate(
-          selectedYear.end,
-        )}`;
-      }
-    }
-
-    if (
-      yearId &&
-      cycle &&
-      n >= 1 &&
-      others.some(
-        (p) =>
-          p.yearId === yearId &&
-          p.cycle === cycle &&
-          p.type === type &&
-          p.number === n,
-      )
-    ) {
-      next.number = "Cette période existe déjà pour cette année et ce cycle";
-    }
+    if (!(n >= 1)) next.ordre = "Numéro invalide (entier à partir de 1)";
+    if (!name.trim()) next.name = "Le libellé est obligatoire";
+    if (!debut) next.debut = "Choisis la date de début";
+    if (!fin) next.fin = "Choisis la date de fin";
+    if (debut && fin && fin <= debut)
+      next.fin = "La date de fin doit être après la date de début";
 
     setErrors(next);
-    if (Object.keys(next).length > 0) return;
+    if (Object.keys(next).length > 0) return false;
 
-    onSave({
-      yearId,
+    save({
+      annee,
       cycle,
-      number: n,
-      label: label.trim(),
+      ordre: n,
+      name: name.trim(),
       type,
-      start: day(start!),
-      end: day(end!),
-      locked,
+      debut: toISO(debut!),
+      fin: toISO(fin!),
+      is_locked: locked,
     });
+    return true;
   };
 
+  const loading = !choicesFailed && (annees === null || cycles === null);
+  const choicesError = choicesFailed
+    ? "Impossible de charger les choix. Ferme puis rouvre ce formulaire."
+    : undefined;
+
   return (
-    <View className="flex-1 bg-white">
-      {/* En-tête */}
-      <View
-        className="flex-row items-center justify-between gap-3 px-5 pb-3"
-        style={{ paddingTop: Platform.OS === "android" ? insets.top + 12 : 20 }}
-      >
-        <View className="flex-1">
-          <Text className="font-inter-bold text-xl text-ink">
-            {isEdit ? "Modifier la période" : "Nouvelle période"}
-          </Text>
-          <Text numberOfLines={1} className="font-inter text-xs text-muted">
-            {isEdit && period ? period.label : "Crée une nouvelle période"}
-          </Text>
-        </View>
-        <Pressable
-          onPress={onClose}
-          hitSlop={8}
-          className="h-9 w-9 items-center justify-center rounded-full bg-soft active:opacity-80"
-        >
-          <Ionicons name="close" size={20} color="#2B5EA8" />
-        </Pressable>
-      </View>
+    <FormSheet
+      title={isEdit ? "Modifier la période" : "Nouvelle période"}
+      subtitle={isEdit && period ? period.name : "Crée une nouvelle période"}
+      submitLabel={saving ? "Envoi…" : isEdit ? "Enregistrer" : "Créer"}
+      showError={hasErrors}
+      onClose={onClose}
+      onSubmit={submit}
+    >
+      <Select
+        label="Année scolaire *"
+        icon="calendar-outline"
+        placeholder={loading ? "Chargement…" : "Sélectionner une année"}
+        value={annee}
+        options={anneeOptions}
+        onChange={(v) => {
+          setAnnee(v);
+          clear("annee");
+        }}
+        error={errors.annee ?? choicesError}
+      />
 
-      {/* Champs */}
-      <ScrollView
-        className="flex-1"
-        contentContainerStyle={{ padding: 20, paddingBottom: 24 }}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        <Select
-          label="Année scolaire *"
-          icon="calendar-outline"
-          placeholder="Sélectionner une année"
-          value={yearId}
-          options={yearOptions}
-          onChange={(v) => {
-            setYearId(v);
-            clear("year");
-          }}
-          error={errors.year}
-        />
+      <Select
+        label="Cycle *"
+        icon="school-outline"
+        placeholder={loading ? "Chargement…" : "Sélectionner un cycle"}
+        value={cycle}
+        options={cycleOptions}
+        onChange={(v) => {
+          setCycle(v);
+          clear("cycle");
+        }}
+        error={errors.cycle ?? choicesError}
+      />
 
-        <Select
-          label="Cycle *"
-          icon="school-outline"
-          placeholder="Sélectionner un cycle"
-          value={cycle}
-          options={CYCLES.map((c) => ({ value: c, label: c }))}
-          onChange={(v) => {
-            setCycle(v);
-            clear("cycle");
-          }}
-          error={errors.cycle}
-        />
+      <Input
+        label="Numéro *"
+        icon="keypad-outline"
+        placeholder="1"
+        value={ordre}
+        onChangeText={onOrdreChange}
+        keyboardType="number-pad"
+        maxLength={2}
+        error={errors.ordre}
+      />
 
-        <Input
-          label="Numéro *"
-          icon="keypad-outline"
-          placeholder="1"
-          value={number}
-          onChangeText={onNumberChange}
-          keyboardType="number-pad"
-          maxLength={2}
-          error={errors.number}
-        />
+      <Input
+        label="Libellé *"
+        icon="pricetag-outline"
+        placeholder="Ex. 1er trimestre"
+        value={name}
+        onChangeText={(t) => {
+          setName(t);
+          setNameEdited(true);
+          clear("name");
+        }}
+        error={errors.name}
+      />
 
-        <Input
-          label="Libellé *"
-          icon="pricetag-outline"
-          placeholder="Ex. 1er trimestre"
-          value={label}
-          onChangeText={(t) => {
-            setLabel(t);
-            setLabelEdited(true);
-            clear("label");
-          }}
-          error={errors.label}
-        />
+      <Select
+        label="Type *"
+        icon="layers-outline"
+        value={type}
+        options={typeOptions}
+        onChange={onTypeChange}
+      />
 
-        <Select
-          label="Type *"
-          icon="layers-outline"
-          value={type}
-          options={PERIOD_TYPES.map((t) => ({ value: t, label: t }))}
-          onChange={onTypeChange}
-        />
+      <DateField
+        label="Date début *"
+        value={debut}
+        defaultValue={selectedYear ? fromISO(selectedYear.debut) : undefined}
+        onChange={(d) => {
+          setDebut(d);
+          clear("debut");
+        }}
+        error={errors.debut}
+      />
 
-        <DateField
-          label="Date début *"
-          value={start}
-          defaultValue={selectedYear?.start}
-          minimumDate={selectedYear?.start}
-          maximumDate={selectedYear?.end}
-          onChange={(d) => {
-            setStart(d);
-            clear("start");
-          }}
-          error={errors.start}
-        />
+      <DateField
+        label="Date fin *"
+        value={fin}
+        defaultValue={selectedYear ? fromISO(selectedYear.fin) : undefined}
+        minimumDate={debut ?? undefined}
+        onChange={(d) => {
+          setFin(d);
+          clear("fin");
+        }}
+        error={errors.fin}
+      />
 
-        <DateField
-          label="Date fin *"
-          value={end}
-          defaultValue={selectedYear?.end}
-          minimumDate={start ?? selectedYear?.start}
-          maximumDate={selectedYear?.end}
-          onChange={(d) => {
-            setEnd(d);
-            clear("end");
-          }}
-          error={errors.end}
-        />
+      <CheckboxRow
+        checked={locked}
+        onToggle={() => setLocked((v) => !v)}
+        title="Verrouillée"
+      />
 
-        <CheckboxRow
-          checked={locked}
-          onToggle={() => setLocked((v) => !v)}
-          title="Verrouillée"
-          description="Une période verrouillée ne peut pas être supprimée"
-        />
-      </ScrollView>
-
-      {/* Annuler / Créer */}
-      <View
-        className="flex-row gap-3 border-t border-line px-5 pt-3"
-        style={{ paddingBottom: Math.max(insets.bottom, 16) }}
-      >
-        <Pressable
-          onPress={onClose}
-          className="h-[54px] flex-1 items-center justify-center rounded-2xl border border-line bg-white active:opacity-80"
-        >
-          <Text className="font-inter-semibold text-base text-ink">
-            Annuler
-          </Text>
-        </Pressable>
-        <View className="flex-1">
-          <Button title={isEdit ? "Enregistrer" : "Créer"} onPress={submit} />
-        </View>
-      </View>
-    </View>
+      {saveError ? (
+        <Text className="mt-4 font-inter text-[13px] text-red-500">
+          {saveError}
+        </Text>
+      ) : null}
+    </FormSheet>
   );
 }

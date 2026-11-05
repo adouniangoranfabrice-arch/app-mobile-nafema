@@ -3,6 +3,7 @@ import { createDren, deleteDren, updateDren } from "@/api/drens";
 import AddDrenaModal from "@/components/gestion/AddDrenaModal";
 import PageBar from "@/components/ui/PageBar";
 import SearchBar from "@/components/ui/SearchBar";
+import { showToast } from "@/components/ui/Toast";
 import { Drena } from "@/data/drenas";
 import { useDrenaList } from "@/hooks/use-drena-list";
 import { IconButton } from "@/organisation/ui";
@@ -258,13 +259,14 @@ export default function Drenas() {
             await updateDren(editing.public_key, data);
             closeForm();
             reload();
+            showToast("DRENA modifiée avec succès.");
             return;
           }
           const message = await createDren(data);
           closeForm();
           refresh();
           // La nouvelle DRENA n'est pas forcément sur la première page : on confirme sa création
-          Alert.alert("DRENA créée", message);
+          showToast(message);
         }}
       />
     </View>

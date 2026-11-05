@@ -1,40 +1,26 @@
-import { AcademicYear, Period, periodStatus } from "@/data/academic";
+import { AcademicYear } from "@/data/academic";
 import { OrgRecord } from "./types";
 
 type SchoolInput = {
   school: string;
   students: { school: string; sex: string; active: boolean }[];
   years: AcademicYear[];
-  periods: Period[];
   classes: OrgRecord[];
   niveaux: OrgRecord[];
   salles: OrgRecord[];
-  now?: Date;
 };
-
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Les statistiques d'une école, sur son année scolaire active (école → année → classes) */
 export function computeSchoolStats(d: SchoolInput) {
-  const now = d.now ?? new Date();
   const year = d.years.find((y) => y.school === d.school && y.active);
 
   const students = d.students.filter((s) => s.school === d.school);
   const classes = year ? d.classes.filter((c) => c.annee === year.id) : [];
-  const periods = year ? d.periods.filter((p) => p.yearId === year.id) : [];
 
   const salleIds = new Set(classes.map((c) => c.salle).filter(Boolean));
   const salles = d.salles.filter((s) => salleIds.has(s.id));
 
-  const daysTotal = year
-    ? Math.round((year.end.getTime() - year.start.getTime()) / DAY_MS)
-    : 0;
-  const daysElapsed = year
-    ? Math.round((now.getTime() - year.start.getTime()) / DAY_MS)
-    : 0;
-
   return {
-    hasYear: !!year,
     totals: {
       students: students.length,
       classes: classes.length,
@@ -46,16 +32,6 @@ export function computeSchoolStats(d: SchoolInput) {
       boys: students.filter((s) => s.sex === "Masculin").length,
     },
     seats: classes.reduce((t, c) => t + (Number(c.effectif_max) || 0), 0),
-    year: {
-      daysTotal,
-      daysElapsed: Math.min(daysTotal, Math.max(0, daysElapsed)),
-    },
-    periods: {
-      total: periods.length,
-      done: periods.filter((p) => periodStatus(p, now) === "done").length,
-      current:
-        periods.find((p) => periodStatus(p, now) === "ongoing")?.label ?? "",
-    },
     classesByNiveau: [...d.niveaux]
       .sort((a, b) => Number(a.order) - Number(b.order))
       .map((n) => ({
@@ -64,6 +40,44 @@ export function computeSchoolStats(d: SchoolInput) {
         count: classes.filter((c) => c.niveau === n.id).length,
       }))
       .filter((n) => n.count > 0),
+  };
+}
+
+/** Les effectifs d'une école sur son année active : ses élèves, et ceux de chaque classe */
+export function computeEffectifs<
+  S extends { school: string; sex: string; active: boolean; classe_id: string },
+>(d: {
+  school: string;
+  students: S[];
+  years: AcademicYear[];
+  classes: OrgRecord[];
+}) {
+  const year = d.years.find((y) => y.school === d.school && y.active);
+  const students = d.students.filter((s) => s.school === d.school);
+  const classes = year ? d.classes.filter((c) => c.annee === year.id) : [];
+  const classIds = new Set(classes.map((c) => c.id));
+  const seats = classes.reduce((t, c) => t + (Number(c.effectif_max) || 0), 0);
+
+  return {
+    total: students.length,
+    active: students.filter((s) => s.active).length,
+    girls: students.filter((s) => s.sex === "Féminin").length,
+    boys: students.filter((s) => s.sex === "Masculin").length,
+    seats,
+    placed: students.filter((s) => classIds.has(s.classe_id)).length,
+    classes: classes
+      .map((c) => ({
+        record: c,
+        capacity: Number(c.effectif_max) || 0,
+        students: students.filter((s) => s.classe_id === c.id),
+      }))
+      .sort((a, b) =>
+        String(a.record.libelle).localeCompare(String(b.record.libelle), "fr", {
+          numeric: true,
+        }),
+      ),
+    // Élèves de l'école sans classe de l'année active
+    unassigned: students.filter((s) => !classIds.has(s.classe_id)),
   };
 }
 

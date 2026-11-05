@@ -1,5 +1,7 @@
 import AddIeppModal from "@/components/gestion/AddIeppModal";
 import ActionButton from "@/components/ui/ActionButton";
+import FixedHeader from "@/components/ui/FixedHeader";
+import { showToast } from "@/components/ui/Toast";
 import { useDrenas } from "@/context/DrenasContext";
 import { confirmDeleteIepp } from "@/utils/confirm";
 import { Ionicons } from "@expo/vector-icons";
@@ -64,16 +66,18 @@ export default function IeppDetail() {
     <View className="flex-1 bg-page">
       <StatusBar style="dark" />
 
+      <FixedHeader>
+        {header}
+      </FixedHeader>
+
       <ScrollView
         contentContainerStyle={{
-          paddingTop: insets.top + 12,
+          paddingTop: 12,
           paddingBottom: 32,
         }}
         showsVerticalScrollIndicator={false}
       >
         <View className="w-full max-w-[640px] gap-4 self-center px-5">
-          {header}
-
           {/* Carte principale */}
           <View className="rounded-3xl bg-primary p-5">
             <View className="flex-row items-center gap-3.5">
@@ -173,6 +177,7 @@ export default function IeppDetail() {
         onSave={(data) => {
           updateIepp(iepp.public_key, data);
           setEditing(false);
+          showToast("IEPP modifiée avec succès.");
         }}
       />
     </View>

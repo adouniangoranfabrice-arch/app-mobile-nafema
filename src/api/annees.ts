@@ -1,4 +1,5 @@
 import { api } from "@/api/client";
+import { fetchAllPages } from "@/api/pages";
 
 export type Annee = {
   public_key: string;
@@ -34,6 +35,11 @@ export async function getAnnees(cursor: string | null) {
   return { annees: data.data, nextCursor: data.pagination.next_cursor };
 }
 
+/** Toutes les années, page après page : pour les listes de choix des formulaires */
+export function getAllAnnees() {
+  return fetchAllPages<Annee>("/annees", (a) => a.public_key);
+}
+
 /** Ce qu'on envoie pour créer ou modifier une année */
 export type AnneeData = {
   name: string;
@@ -43,8 +49,10 @@ export type AnneeData = {
   etablissement: string; // public_key de l'établissement
 };
 
+/** Crée une année et renvoie le message de confirmation du serveur, s'il y en a un */
 export async function createAnnee(annee: AnneeData) {
-  await api.post("/annees", annee);
+  const { data } = await api.post<{ message?: string }>("/annees", annee);
+  return data?.message;
 }
 
 export async function updateAnnee(publicKey: string, annee: AnneeData) {

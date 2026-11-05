@@ -3,6 +3,7 @@ import { Cycle } from "@/api/cycles";
 import { FormSheet, SheetModal } from "@/components/ui/FormSheet";
 import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
+import { showToast } from "@/components/ui/Toast";
 import { useState } from "react";
 import { Text } from "react-native";
 
@@ -58,7 +59,9 @@ function NiveauForm({
     try {
       await onSave(data);
     } catch (error) {
-      setSaveError(apiErrorMessage(error));
+      const message = apiErrorMessage(error);
+      setSaveError(message);
+      showToast(message, "error");
       setSaving(false);
     }
   };

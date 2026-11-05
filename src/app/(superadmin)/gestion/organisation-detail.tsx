@@ -1,4 +1,6 @@
 import ActionButton from "@/components/ui/ActionButton";
+import FixedHeader from "@/components/ui/FixedHeader";
+import { showToast } from "@/components/ui/Toast";
 import { useGestion } from "@/hooks/use-gestion";
 import EntityFormModal from "@/organisation/EntityFormModal";
 import { useOrganisation } from "@/organisation/OrganisationContext";
@@ -148,16 +150,18 @@ function EntityDetail({ config, id }: { config: EntityConfig; id: string }) {
     <View className="flex-1 bg-page">
       <StatusBar style="dark" />
 
+      <FixedHeader>
+        {header}
+      </FixedHeader>
+
       <ScrollView
         contentContainerStyle={{
-          paddingTop: insets.top + 12,
+          paddingTop: 12,
           paddingBottom: 32,
         }}
         showsVerticalScrollIndicator={false}
       >
         <View className="w-full max-w-[640px] gap-4 self-center px-5">
-          {header}
-
           {/* Carte principale */}
           <View className="rounded-3xl bg-primary p-5">
             <View className="flex-row items-center gap-3.5">
@@ -248,6 +252,7 @@ function EntityDetail({ config, id }: { config: EntityConfig; id: string }) {
         onSave={(values) => {
           update(config.key, record.id, values);
           setEditing(false);
+          showToast("Modifications enregistrées.");
         }}
       />
     </View>

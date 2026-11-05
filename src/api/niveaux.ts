@@ -1,4 +1,5 @@
 import { api } from "@/api/client";
+import { fetchAllPages } from "@/api/pages";
 
 export type Niveau = {
   public_key: string;
@@ -27,12 +28,6 @@ type RawNiveau = {
   cree_le?: string;
 };
 
-type NiveauxResponse = {
-  success: boolean;
-  data: RawNiveau[];
-  pagination: { next_page_url: string | null };
-};
-
 const toNiveau = (n: RawNiveau): Niveau => ({
   public_key: n.public_key ?? n.pubkey ?? String(n.id ?? ""),
   abbreviation: n.abbreviation ?? n.code ?? "",
@@ -43,26 +38,13 @@ const toNiveau = (n: RawNiveau): Niveau => ({
   cree_le: n.cree_le ?? "",
 });
 
-const PER_PAGE = 20;
-
 /** Tous les niveaux, page après page : la recherche et le filtre se font dans l'application */
 export async function getNiveaux() {
-  const all = new Map<string, Niveau>();
-  let query: string | null = null;
-  do {
-    const response: { data: NiveauxResponse } = await api.get<NiveauxResponse>(
-      query ? `/niveaux?${query}` : "/niveaux",
-      { params: { per_page: PER_PAGE } },
-    );
-    const before = all.size;
-    response.data.data.map(toNiveau).forEach((n) => all.set(n.public_key, n));
-    // Une page sans rien de nouveau : on s'arrête, sinon on redemanderait sans fin
-    query =
-      all.size > before
-        ? (response.data.pagination.next_page_url?.split("?")[1] ?? null)
-        : null;
-  } while (query);
-  return [...all.values()];
+  const all = await fetchAllPages<RawNiveau>(
+    "/niveaux",
+    (n) => toNiveau(n).public_key,
+  );
+  return all.map(toNiveau);
 }
 
 /** Crée un niveau et renvoie le message de confirmation du serveur */

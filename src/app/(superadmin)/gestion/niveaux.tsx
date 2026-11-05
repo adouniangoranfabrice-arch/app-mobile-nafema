@@ -4,6 +4,7 @@ import AddNiveauModal from "@/components/gestion/AddNiveauModal";
 import PageBar from "@/components/ui/PageBar";
 import SearchFilterBar from "@/components/ui/SearchFilterBar";
 import Select from "@/components/ui/Select";
+import { showToast } from "@/components/ui/Toast";
 import { useGestion } from "@/hooks/use-gestion";
 import { IconButton } from "@/organisation/ui";
 import { normalize } from "@/utils/text";
@@ -13,7 +14,6 @@ import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Platform,
   Pressable,
@@ -311,7 +311,7 @@ export default function Niveaux() {
           const message = await createNiveau(data);
           setAdding(false);
           load("refreshing");
-          Alert.alert("Niveau créé", message);
+          showToast(message);
         }}
       />
     </View>

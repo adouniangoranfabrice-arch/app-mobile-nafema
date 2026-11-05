@@ -185,8 +185,8 @@ export default function Ecoles() {
           {/* Titre + bouton d'ajout */}
           <View className="flex-row items-center justify-between gap-3">
             <View className="flex-1">
-              <Text className="font-inter-bold text-[28px] leading-9 text-ink">
-                Établissements
+              <Text className="font-inter-bold text-[20px] leading-9 text-ink">
+                Écoles
               </Text>
               <Text className="mt-1 font-inter text-[13px] text-muted">
                 Toutes les écoles de la plateforme

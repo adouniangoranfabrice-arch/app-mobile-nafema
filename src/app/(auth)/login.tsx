@@ -9,6 +9,7 @@ import { clearToken } from "@/api/client";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import { MotionView } from "@/components/ui/MotionView";
+import { showToast } from "@/components/ui/Toast";
 import { getDeviceInfo } from "@/utils/device";
 import { Href, useRouter } from "expo-router";
 import { useState } from "react";
@@ -39,7 +40,6 @@ export default function Login() {
     mot_de_passe?: string;
   }>({});
   const [loading, setLoading] = useState(false);
-  const [loginError, setLoginError] = useState("");
 
   const validate = () => {
     const next: { identifiant?: string; mot_de_passe?: string } = {};
@@ -62,10 +62,13 @@ export default function Login() {
   };
 
   const handleLogin = async () => {
-    if (loading || !validate()) return;
+    if (loading) return;
+    if (!validate()) {
+      showToast("Veuillez corriger les champs en rouge.", "error");
+      return;
+    }
     try {
       setLoading(true);
-      setLoginError("");
 
       const user = await login(
         identifiant.trim(),
@@ -78,11 +81,11 @@ export default function Login() {
         router.replace(home);
       } else {
         await clearToken(); // pas de session ouverte sans espace à afficher
-        setLoginError("Aucun espace n'est disponible pour ce compte.");
+        showToast("Aucun espace n'est disponible pour ce compte.", "error");
       }
     } catch (error) {
       showLoginError(error);
-      setLoginError(loginErrorMessage(error));
+      showToast(loginErrorMessage(error), "error");
     } finally {
       setLoading(false);
     }
@@ -159,12 +162,6 @@ export default function Login() {
               onPress={() => router.replace("/(app)/home")}
               title="Se connecter"
             /> */}
-
-            {loginError ? (
-              <Text className="mb-3 text-center font-inter text-[13px] text-red-500">
-                {loginError}
-              </Text>
-            ) : null}
 
             <Button
               title={loading ? "Connexion…" : "Se connecter"}

@@ -1,5 +1,6 @@
 import { GestionProviders } from "@/context/GestionProviders";
 import { Ionicons } from "@expo/vector-icons";
+import { PedagogyProviders } from "@/context/PedagogyProviders";
 import { Tabs } from "expo-router";
 import { ColorValue } from "react-native";
 
@@ -18,6 +19,7 @@ const icon =
 export default function TeacherLayout() {
   return (
     <GestionProviders>
+      <PedagogyProviders>
       <Tabs
         screenOptions={{
           headerShown: false,
@@ -74,6 +76,7 @@ export default function TeacherLayout() {
           }}
         />
       </Tabs>
+      </PedagogyProviders>
     </GestionProviders>
   );
 }

@@ -2,6 +2,7 @@ import { Cycle } from "@/api/cycles";
 import { apiErrorMessage } from "@/api/client";
 import { FormSheet, SheetModal } from "@/components/ui/FormSheet";
 import Input from "@/components/ui/Input";
+import { showToast } from "@/components/ui/Toast";
 import { useState } from "react";
 import { Text } from "react-native";
 
@@ -9,20 +10,28 @@ type CycleData = Omit<Cycle, "public_key">;
 
 type Props = {
   visible: boolean;
-  nextOrder: number; // ordre proposé : à la suite des cycles existants
+  cycle?: Cycle | null; // si fourni : mode modification
+  nextOrder?: number; // ordre proposé à la création : à la suite des cycles existants
   onClose: () => void;
   onSave: (cycle: CycleData) => Promise<void>;
 };
 
 export default function AddCycleModal({
   visible,
+  cycle,
   nextOrder,
   onClose,
   onSave,
 }: Props) {
   return (
     <SheetModal visible={visible} onClose={onClose}>
-      <CycleForm nextOrder={nextOrder} onClose={onClose} onSave={onSave} />
+      <CycleForm
+        key={cycle?.public_key ?? "new"}
+        cycle={cycle ?? null}
+        nextOrder={nextOrder}
+        onClose={onClose}
+        onSave={onSave}
+      />
     </SheetModal>
   );
 }
@@ -30,13 +39,16 @@ export default function AddCycleModal({
 type Errors = Partial<Record<"abbreviation" | "name" | "order", string>>;
 
 function CycleForm({
+  cycle,
   nextOrder,
   onClose,
   onSave,
-}: Omit<Props, "visible">) {
-  const [abbreviation, setAbbreviation] = useState("");
-  const [name, setName] = useState("");
-  const [order, setOrder] = useState(String(nextOrder));
+}: Omit<Props, "visible" | "cycle"> & { cycle: Cycle | null }) {
+  const isEdit = !!cycle;
+
+  const [abbreviation, setAbbreviation] = useState(cycle?.abbreviation ?? "");
+  const [name, setName] = useState(cycle?.name ?? "");
+  const [order, setOrder] = useState(String(cycle?.order ?? nextOrder ?? 1));
   const [errors, setErrors] = useState<Errors>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
@@ -51,7 +63,9 @@ function CycleForm({
     try {
       await onSave(data);
     } catch (error) {
-      setSaveError(apiErrorMessage(error));
+      const message = apiErrorMessage(error);
+      setSaveError(message);
+      showToast(message, "error");
       setSaving(false);
     }
   };
@@ -79,9 +93,9 @@ function CycleForm({
 
   return (
     <FormSheet
-      title="Nouveau cycle"
-      subtitle="Créez un nouveau cycle"
-      submitLabel={saving ? "Envoi…" : "Créer"}
+      title={isEdit ? "Modifier le cycle" : "Nouveau cycle"}
+      subtitle={isEdit && cycle ? cycle.name : "Créez un nouveau cycle"}
+      submitLabel={saving ? "Envoi…" : isEdit ? "Enregistrer" : "Créer"}
       showError={hasErrors}
       onClose={onClose}
       onSubmit={submit}

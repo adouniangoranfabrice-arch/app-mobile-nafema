@@ -3,6 +3,8 @@ import ActionButton from "@/components/ui/ActionButton";
 import FilterChips from "@/components/ui/FilterChips";
 import PagedHint from "@/components/ui/PagedHint";
 import SearchBar from "@/components/ui/SearchBar";
+import FixedHeader from "@/components/ui/FixedHeader";
+import { showToast } from "@/components/ui/Toast";
 import { useStudents } from "@/context/StudentsContext";
 import { Student, fullName } from "@/data/students";
 import { useGestion } from "@/hooks/use-gestion";
@@ -15,11 +17,9 @@ import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function Eleves() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const { students, addStudent, updateStudent, deleteStudent } = useStudents();
   const { canEdit, href } = useGestion();
 
@@ -65,9 +65,52 @@ export default function Eleves() {
     <View className="flex-1 bg-page">
       <StatusBar style="dark" />
 
+      <FixedHeader>
+        {/* En-tête avec retour */}
+        <View className="flex-row items-center gap-3">
+          <Pressable
+            onPress={() => router.back()}
+            hitSlop={8}
+            className="h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm active:opacity-80"
+          >
+            <Ionicons name="chevron-back" size={22} color="#2B5EA8" />
+          </Pressable>
+          <View className="flex-1">
+            <Text className="font-inter-bold text-[20px] leading-8 text-ink">
+              Élèves
+            </Text>
+            <Text className="font-inter text-[13px] text-muted">
+              {students.length} enregistré{plural(students.length)} ·{" "}
+              {activeCount} actif
+              {plural(activeCount)}
+            </Text>
+          </View>
+        </View>
+
+        {/* Recherche + filtres */}
+        <SearchBar
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Rechercher un élève, un matricule, une école"
+        />
+        <FilterChips
+          selected={filter}
+          onSelect={setFilter}
+          chips={[
+            { key: "all", label: "Tous", count: students.length },
+            { key: "active", label: "Actifs", count: activeCount },
+            {
+              key: "inactive",
+              label: "Inactifs",
+              count: students.length - activeCount,
+            },
+          ]}
+        />
+      </FixedHeader>
+
       <ScrollView
         contentContainerStyle={{
-          paddingTop: insets.top + 12,
+          paddingTop: 12,
           paddingBottom: 32,
         }}
         keyboardShouldPersistTaps="handled"
@@ -75,47 +118,6 @@ export default function Eleves() {
         {...scrollProps}
       >
         <View className="w-full max-w-[640px] gap-4 self-center px-5">
-          {/* En-tête avec retour */}
-          <View className="flex-row items-center gap-3">
-            <Pressable
-              onPress={() => router.back()}
-              hitSlop={8}
-              className="h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm active:opacity-80"
-            >
-              <Ionicons name="chevron-back" size={22} color="#2B5EA8" />
-            </Pressable>
-            <View className="flex-1">
-              <Text className="font-inter-bold text-[20px] leading-8 text-ink">
-                Élèves
-              </Text>
-              <Text className="font-inter text-[13px] text-muted">
-                {students.length} enregistré{plural(students.length)} ·{" "}
-                {activeCount} actif
-                {plural(activeCount)}
-              </Text>
-            </View>
-          </View>
-
-          {/* Recherche + filtres */}
-          <SearchBar
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Rechercher un élève, un matricule, une école"
-          />
-          <FilterChips
-            selected={filter}
-            onSelect={setFilter}
-            chips={[
-              { key: "all", label: "Tous", count: students.length },
-              { key: "active", label: "Actifs", count: activeCount },
-              {
-                key: "inactive",
-                label: "Inactifs",
-                count: students.length - activeCount,
-              },
-            ]}
-          />
-
           {/* Bouton d'ajout */}
           {canEdit && (
             <Pressable
@@ -234,6 +236,7 @@ export default function Eleves() {
           if (editing) updateStudent(editing.id, data);
           else addStudent(data);
           closeForm();
+          showToast(editing ? "Élève modifié avec succès." : "Élève créé avec succès.");
         }}
       />
     </View>

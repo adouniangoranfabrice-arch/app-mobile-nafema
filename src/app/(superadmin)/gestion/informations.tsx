@@ -1,5 +1,6 @@
 import { getMe, User } from "@/api/auth";
 import { Stagger } from "@/components/ui/MotionView";
+import FixedHeader from "@/components/ui/FixedHeader";
 import { fromISO } from "@/organisation/helpers";
 import { formatDate } from "@/utils/dates";
 import { initials } from "@/utils/text";
@@ -14,7 +15,6 @@ import {
   Text,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
@@ -28,7 +28,6 @@ const ROLE_LABELS: Record<string, string> = {
 
 export default function Informations() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const [user, setUser] = useState<User | null>(null);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -58,28 +57,30 @@ export default function Informations() {
     <View className="flex-1 bg-page">
       <StatusBar style="dark" />
 
+      <FixedHeader>
+        {/* En-tête avec retour */}
+        <View className="flex-row items-center gap-3">
+          <Pressable
+            onPress={() => router.back()}
+            hitSlop={8}
+            className="h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm active:opacity-80"
+          >
+            <Ionicons name="chevron-back" size={22} color="#2B5EA8" />
+          </Pressable>
+          <Text className="flex-1 font-inter-bold text-[20px] leading-8 text-ink">
+            Informations personnelles
+          </Text>
+        </View>
+      </FixedHeader>
+
       <ScrollView
         contentContainerStyle={{
-          paddingTop: insets.top + 12,
+          paddingTop: 12,
           paddingBottom: 32,
         }}
         showsVerticalScrollIndicator={false}
       >
         <View className="w-full max-w-[640px] gap-4 self-center px-5">
-          {/* En-tête avec retour */}
-          <View className="flex-row items-center gap-3">
-            <Pressable
-              onPress={() => router.back()}
-              hitSlop={8}
-              className="h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm active:opacity-80"
-            >
-              <Ionicons name="chevron-back" size={22} color="#2B5EA8" />
-            </Pressable>
-            <Text className="flex-1 font-inter-bold text-[20px] leading-8 text-ink">
-              Informations personnelles
-            </Text>
-          </View>
-
           {user ? (
             <Stagger>
               {/* Carte principale */}

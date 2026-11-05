@@ -1,11 +1,15 @@
 import { apiErrorMessage } from "@/api/client";
-import { deleteCycle, markCyclesStale } from "@/api/cycles";
+import { deleteCycle, markCyclesStale, updateCycle } from "@/api/cycles";
+import AddCycleModal from "@/components/gestion/AddCycleModal";
 import ActionButton from "@/components/ui/ActionButton";
+import FixedHeader from "@/components/ui/FixedHeader";
+import { showToast } from "@/components/ui/Toast";
 import { useGestion } from "@/hooks/use-gestion";
 import { confirmDeleteCycle } from "@/utils/confirm";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { useState } from "react";
 import { Alert, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -22,6 +26,7 @@ export default function CycleDetail() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { canEdit } = useGestion();
+  const [editing, setEditing] = useState(false);
 
   const header = (
     <View className="flex-row items-center gap-3">
@@ -57,34 +62,35 @@ export default function CycleDetail() {
     );
   }
 
+  const current = { ...cycle, order: Number(cycle.order) };
+
   const remove = () =>
-    confirmDeleteCycle(
-      { ...cycle, order: Number(cycle.order) },
-      async () => {
-        try {
-          await deleteCycle(cycle.public_key);
-          markCyclesStale();
-          router.back();
-        } catch (error) {
-          Alert.alert("Suppression impossible", apiErrorMessage(error));
-        }
-      },
-    );
+    confirmDeleteCycle(current, async () => {
+      try {
+        await deleteCycle(cycle.public_key);
+        markCyclesStale();
+        router.back();
+      } catch (error) {
+        Alert.alert("Suppression impossible", apiErrorMessage(error));
+      }
+    });
 
   return (
     <View className="flex-1 bg-page">
       <StatusBar style="dark" />
 
+      <FixedHeader>
+        {header}
+      </FixedHeader>
+
       <ScrollView
         contentContainerStyle={{
-          paddingTop: insets.top + 12,
+          paddingTop: 12,
           paddingBottom: 32,
         }}
         showsVerticalScrollIndicator={false}
       >
         <View className="w-full max-w-[640px] gap-4 self-center px-5">
-          {header}
-
           {/* Carte principale */}
           <View className="rounded-3xl bg-primary p-5">
             <View className="flex-row items-center gap-3.5">
@@ -128,16 +134,38 @@ export default function CycleDetail() {
 
           {/* Actions */}
           {canEdit && (
-            <ActionButton
-              icon="trash-outline"
-              label="Supprimer ce cycle"
-              variant="danger"
-              className="w-full"
-              onPress={remove}
-            />
+            <View className="gap-3">
+              <ActionButton
+                icon="create-outline"
+                label="Modifier ce cycle"
+                variant="primary"
+                className="w-full"
+                onPress={() => setEditing(true)}
+              />
+              <ActionButton
+                icon="trash-outline"
+                label="Supprimer ce cycle"
+                variant="danger"
+                className="w-full"
+                onPress={remove}
+              />
+            </View>
           )}
         </View>
       </ScrollView>
+
+      <AddCycleModal
+        visible={editing}
+        cycle={current}
+        onClose={() => setEditing(false)}
+        onSave={async (data) => {
+          await updateCycle(cycle.public_key, data);
+          setEditing(false);
+          markCyclesStale();
+          showToast("Cycle modifié avec succès.");
+          router.back(); // retour à la liste, rechargée avec la modification
+        }}
+      />
     </View>
   );
 }

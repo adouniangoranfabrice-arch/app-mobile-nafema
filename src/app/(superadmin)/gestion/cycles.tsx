@@ -5,10 +5,12 @@ import {
   deleteCycle,
   getCycles,
   takeCyclesStale,
+  updateCycle,
 } from "@/api/cycles";
 import AddCycleModal from "@/components/gestion/AddCycleModal";
 import PageBar from "@/components/ui/PageBar";
 import SearchBar from "@/components/ui/SearchBar";
+import { showToast } from "@/components/ui/Toast";
 import { useGestion } from "@/hooks/use-gestion";
 import { IconButton } from "@/organisation/ui";
 import { confirmDeleteCycle } from "@/utils/confirm";
@@ -47,6 +49,7 @@ export default function Cycles() {
   const [query, setQuery] = useState("");
   const [requestedPage, setRequestedPage] = useState(1);
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Cycle | null>(null);
 
   const load = useCallback(async (next: "loading" | "refreshing") => {
     const request = ++lastRequest.current;
@@ -83,6 +86,11 @@ export default function Cycles() {
         order: String(c.order),
       }),
     );
+
+  const closeForm = () => {
+    setAdding(false);
+    setEditing(null);
+  };
 
   const remove = (c: Cycle) =>
     confirmDeleteCycle(c, async () => {
@@ -215,12 +223,20 @@ export default function Cycles() {
                   onPress={() => openDetail(item)}
                 />
                 {canEdit && (
-                  <IconButton
-                    icon="trash-outline"
-                    color="#DC2626"
-                    label="Supprimer"
-                    onPress={() => remove(item)}
-                  />
+                  <>
+                    <IconButton
+                      icon="create-outline"
+                      color="#2B5EA8"
+                      label="Modifier"
+                      onPress={() => setEditing(item)}
+                    />
+                    <IconButton
+                      icon="trash-outline"
+                      color="#DC2626"
+                      label="Supprimer"
+                      onPress={() => remove(item)}
+                    />
+                  </>
                 )}
               </View>
             </View>
@@ -276,16 +292,24 @@ export default function Cycles() {
         onNext={() => setRequestedPage(page + 1)}
       />
 
-      {/* Formulaire d'ajout */}
+      {/* Formulaire : ajout ou modification */}
       <AddCycleModal
-        visible={adding}
+        visible={adding || editing !== null}
+        cycle={editing}
         nextOrder={Math.max(0, ...cycles.map((c) => c.order)) + 1}
-        onClose={() => setAdding(false)}
+        onClose={closeForm}
         onSave={async (data) => {
+          if (editing) {
+            await updateCycle(editing.public_key, data);
+            closeForm();
+            load("refreshing");
+            showToast("Cycle modifié avec succès.");
+            return;
+          }
           const message = await createCycle(data);
-          setAdding(false);
+          closeForm();
           load("refreshing");
-          Alert.alert("Cycle créé", message);
+          showToast(message);
         }}
       />
     </View>

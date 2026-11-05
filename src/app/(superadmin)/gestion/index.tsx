@@ -1,7 +1,13 @@
 import { Stagger } from "@/components/ui/MotionView";
-import { useAcademic } from "@/context/AcademicContext";
+import FixedHeader from "@/components/ui/FixedHeader";
+import { useCompetences } from "@/context/CompetencesContext";
 import { useDrenas } from "@/context/DrenasContext";
+import { useEvaluations } from "@/context/EvaluationsContext";
+import { usePedagogie } from "@/context/PedagogieContext";
 import { useStudents } from "@/context/StudentsContext";
+import { ABSENCES } from "@/data/absences";
+import { NOTES } from "@/data/notes";
+import { BULLETINS } from "@/data/pedagogie";
 import { useGestion } from "@/hooks/use-gestion";
 import { useLogout } from "@/hooks/use-logout";
 import { useOrganisation } from "@/organisation/OrganisationContext";
@@ -17,7 +23,6 @@ import {
   Text,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
@@ -27,37 +32,41 @@ const plural = (n: number) => (n > 1 ? "s" : "");
 
 export default function gestion() {
   const signOut = useLogout();
-  const insets = useSafeAreaInsets();
   const { canOpen, canUse } = useGestion();
 
   return (
     <View className="flex-1 bg-page">
       <StatusBar style="dark" />
 
+      <FixedHeader>
+        <View>
+          <Text className="font-inter-bold text-[28px] leading-9 text-ink">
+            gestion
+          </Text>
+          <Text className="mt-1 font-inter text-[13px] text-muted">
+            Pilotage et paramètres de la plateforme
+          </Text>
+        </View>
+      </FixedHeader>
+
       <ScrollView
         contentContainerStyle={{
-          paddingTop: insets.top + 12,
+          paddingTop: 12,
           paddingBottom: 32,
         }}
         showsVerticalScrollIndicator={false}
       >
         <View className="w-full max-w-[640px] gap-4 self-center px-5">
-          <View>
-            <Text className="font-inter-bold text-[28px] leading-9 text-ink">
-              gestion
-            </Text>
-            <Text className="mt-1 font-inter text-[13px] text-muted">
-              Pilotage et paramètres de la plateforme
-            </Text>
-          </View>
-
           <Stagger>
             <PersonalInformation />
-            {canOpen("drenas") && <DrenasManagement />}
-            <AcademicManagement />
+            {canOpen("periodes") && <AcademicManagement />}
             <SchoolingManagement />
-            <OrganisationManagement />
-            {canUse("utilisateurs") && <AdministrationManagement />}
+            {canOpen("familles") && <FamilyManagement />}
+            {canOpen("drenas") && <DrenasManagement />}
+            {ENTITY_KEYS.some(canUse) && <OrganisationManagement />}
+            {canOpen("evaluations") && <PedagogyManagement />}
+            {canOpen("absences") && <SchoolLifeManagement />}
+            {canUse("personnels") && <AdministrationManagement />}
 
             <Pressable
               onPress={signOut}
@@ -105,18 +114,174 @@ function PersonalInformation() {
   );
 }
 
+/* ---------- Cadre « Pédagogie & évaluations » (enseignant) ---------- */
+
+function PedagogyManagement() {
+  const router = useRouter();
+  const { href } = useGestion();
+  const { evaluations } = useEvaluations();
+  const { competences } = useCompetences();
+  const { evaluationsCompetences, appreciations, examens } = usePedagogie();
+  const summary = `${evaluations.length} évaluation${plural(evaluations.length)}`;
+
+  return (
+    <AccordionCard
+      icon="checkmark-done-outline"
+      title="Pédagogie & évaluations"
+      subtitle="Évaluations, notes, compétences, bulletins, examens"
+    >
+      <ExpandRow
+        icon="checkmark-done-outline"
+        title="Évaluations"
+        summary={summary}
+      >
+        <SubLink
+          title="Nouvelle évaluation"
+          onPress={() => router.push(href("nouvelle-evaluation"))}
+        />
+        <SubLink
+          title="Liste des évaluations"
+          onPress={() => router.push(href("evaluations"))}
+        />
+      </ExpandRow>
+      <LinkRow
+        icon="keypad-outline"
+        title="Notes"
+        summary={`${NOTES.length} note${plural(NOTES.length)}`}
+        onPress={() => router.push(href("notes"))}
+      />
+      <ExpandRow
+        icon="locate-outline"
+        title="Compétences"
+        summary={`${competences.length} compétence${plural(competences.length)}`}
+      >
+        <SubLink
+          title="Nouvelle compétence"
+          onPress={() => router.push(href("nouvelle-competence"))}
+        />
+        <SubLink
+          title="Liste des compétences"
+          onPress={() => router.push(href("competences"))}
+        />
+      </ExpandRow>
+      <ExpandRow
+        icon="list-outline"
+        title="Évaluations-compétences"
+        summary={`${evaluationsCompetences.length} évaluation${plural(evaluationsCompetences.length)}`}
+      >
+        <SubLink
+          title="Nouvelle évaluation"
+          onPress={() => router.push(href("nouvelle-evaluation-competence"))}
+        />
+        <SubLink
+          title="Liste des évaluations"
+          onPress={() => router.push(href("evaluations-competences"))}
+        />
+      </ExpandRow>
+      <ExpandRow
+        icon="chatbox-ellipses-outline"
+        title="Appréciations-matières"
+        summary={`${appreciations.length} appréciation${plural(appreciations.length)}`}
+      >
+        <SubLink
+          title="Nouvelle appréciation"
+          onPress={() => router.push(href("nouvelle-appreciation"))}
+        />
+        <SubLink
+          title="Liste des appréciations"
+          onPress={() => router.push(href("appreciations"))}
+        />
+      </ExpandRow>
+      <ExpandRow
+        icon="document-text-outline"
+        title="Bulletins"
+        summary={`${BULLETINS.length} bulletin${plural(BULLETINS.length)}`}
+      >
+        <SubLink
+          title="Liste des bulletins"
+          onPress={() => router.push(href("bulletins"))}
+        />
+      </ExpandRow>
+      <ExpandRow
+        icon="document-outline"
+        title="Examens"
+        summary={`${examens.length} examen${plural(examens.length)}`}
+      >
+        <SubLink
+          title="Nouvel examen"
+          onPress={() => router.push(href("nouvel-examen"))}
+        />
+        <SubLink
+          title="Liste des examens"
+          onPress={() => router.push(href("examens"))}
+        />
+      </ExpandRow>
+    </AccordionCard>
+  );
+}
+
+/* ---------- Cadre « Élèves & familles » ---------- */
+
+function FamilyManagement() {
+  const router = useRouter();
+  const { href } = useGestion();
+
+  return (
+    <AccordionCard
+      icon="people-outline"
+      title="Élèves & familles"
+      subtitle="Parents et liens avec les élèves"
+    >
+      <LinkRow
+        icon="person-outline"
+        title="Parents"
+        summary="Liste des parents"
+        onPress={() => router.push(href("parents"))}
+      />
+      <LinkRow
+        icon="people-outline"
+        title="Parents - Élèves"
+        summary="Liens entre parents et élèves"
+        onPress={() => router.push(href("parents-eleves"))}
+      />
+    </AccordionCard>
+  );
+}
+
+/* ---------- Cadre « Vie scolaire » (enseignant) ---------- */
+
+function SchoolLifeManagement() {
+  const router = useRouter();
+  const { href } = useGestion();
+  const summary = `${ABSENCES.length} absence${plural(ABSENCES.length)}`;
+
+  return (
+    <AccordionCard
+      icon="calendar-outline"
+      title="Vie scolaire"
+      subtitle={summary}
+    >
+      <ExpandRow icon="calendar-outline" title="Absences" summary={summary}>
+        <SubLink
+          title="Liste des absences"
+          onPress={() => router.push(href("absences"))}
+        />
+      </ExpandRow>
+    </AccordionCard>
+  );
+}
+
 /* ---------- Cadre « gestion académique » ---------- */
 
 function AcademicManagement() {
   const router = useRouter();
-  const { periods } = useAcademic();
   const { canOpen, href } = useGestion();
 
   return (
     <AccordionCard
       icon="library-outline"
       title="gestion académique"
-      subtitle={`Années scolaires · ${periods.length} période${plural(periods.length)}`}
+      subtitle="Années scolaires et périodes"
     >
       {canOpen("annees") && (
         <LinkRow
@@ -129,7 +294,7 @@ function AcademicManagement() {
       <LinkRow
         icon="layers-outline"
         title="Périodes"
-        summary={`${periods.length} période${plural(periods.length)} enregistrée${plural(periods.length)}`}
+        summary="Liste des périodes"
         onPress={() => router.push(href("periodes"))}
       />
     </AccordionCard>
@@ -213,13 +378,18 @@ function OrganisationManagement() {
       {keys.map((key) => {
         const config = ENTITIES[key];
         // Ces rubriques viennent de l'API : elles ont leur propre écran
-        if (key === "cycles" || key === "niveaux") {
+        if (
+          key === "cycles" ||
+          key === "niveaux" ||
+          key === "series" ||
+          key === "salles"
+        ) {
           return (
             <LinkRow
               key={key}
               icon={config.icon}
               title={config.title}
-              summary={`Liste des ${key}`}
+              summary={`Liste des ${config.title.toLowerCase()}`}
               onPress={() => router.push(href(key))}
             />
           );
@@ -248,7 +418,6 @@ function AdministrationManagement() {
   const open = (entity: string) =>
     router.push(href("organisation", { entity }));
 
-  const users = records("utilisateurs").length;
   const staff = records("personnels").length;
   const roles = records("roles").filter((r) => r.guard === "web").length;
   const permissions = records("permissions").filter(
@@ -259,14 +428,16 @@ function AdministrationManagement() {
     <AccordionCard
       icon="shield-checkmark-outline"
       title="Administration"
-      subtitle={`${users} utilisateur${plural(users)} · ${staff} personnel${plural(staff)}`}
+      subtitle={`${canUse("utilisateurs") ? "Utilisateurs · " : ""}${staff} personnel${plural(staff)}`}
     >
-      <LinkRow
-        icon="people-outline"
-        title="Utilisateurs"
-        summary={`${users} utilisateur(s)`}
-        onPress={() => open("utilisateurs")}
-      />
+      {canUse("utilisateurs") && (
+        <LinkRow
+          icon="people-outline"
+          title="Utilisateurs"
+          summary="Liste des utilisateurs"
+          onPress={() => router.push(href("utilisateurs"))}
+        />
+      )}
       <LinkRow
         icon="briefcase-outline"
         title="Personnels"

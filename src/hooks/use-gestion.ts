@@ -5,6 +5,7 @@ type Access = {
   canEdit: boolean; // créer, modifier, supprimer
   screens: string[];
   entities: EntityKey[];
+  school?: string; // limite les listes fictives à cette école
 };
 
 // Ce que chaque espace affiche : c'est la navigation, l'API reste seule juge des droits
@@ -17,6 +18,10 @@ const ACCESS = {
       "periodes",
       "inscriptions",
       "eleves",
+      "evaluations",
+      "absences",
+      "familles",
+      "suppression-periodes",
       "attribution",
       "suivi-modules",
     ],
@@ -37,7 +42,8 @@ const ACCESS = {
   },
   "(adminschool)": {
     canEdit: true,
-    screens: ["annees", "periodes", "inscriptions", "eleves"],
+    school: "Collège des Almadies", // à remplacer par l'école du compte quand ces données viendront de l'API
+    screens: ["annees", "periodes", "inscriptions", "eleves", "familles"],
     entities: [
       "niveaux",
       "cycles",
@@ -45,14 +51,13 @@ const ACCESS = {
       "salles",
       "classes",
       "matieres",
-      "utilisateurs",
       "personnels",
     ],
   },
   "(teacher)": {
     canEdit: false,
-    screens: ["periodes", "eleves"],
-    entities: ["salles", "classes"],
+    screens: ["eleves", "evaluations", "absences"],
+    entities: [],
   },
 } satisfies Record<string, Access>;
 
@@ -66,6 +71,7 @@ export function useGestion() {
 
   return {
     canEdit: access.canEdit,
+    school: access.school,
     canOpen: (screen: string) => access.screens.includes(screen),
     canUse: (entity: EntityKey) => access.entities.includes(entity),
     href: (screen: string, params?: Record<string, string>) =>

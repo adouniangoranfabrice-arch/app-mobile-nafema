@@ -1,89 +1,145 @@
+import { apiErrorMessage } from "@/api/client";
+import {
+  deletePeriode,
+  markPeriodesStale,
+  updatePeriode,
+} from "@/api/periodes";
 import AddPeriodModal from "@/components/gestion/AddPeriodModal";
 import ActionButton from "@/components/ui/ActionButton";
-import { useAcademic } from "@/context/AcademicContext";
+import FixedHeader from "@/components/ui/FixedHeader";
+import { showToast } from "@/components/ui/Toast";
 import { PERIOD_STATUS, periodStatus } from "@/data/academic";
 import { useGestion } from "@/hooks/use-gestion";
-import { confirmDeletePeriod } from "@/utils/confirm";
-import { formatDate, yearLabel } from "@/utils/dates";
+import { fromISO } from "@/organisation/helpers";
+import { confirmDeletePeriode } from "@/utils/confirm";
+import { formatDate } from "@/utils/dates";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { ReactNode, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Alert, Pressable, ScrollView, Text, View } from "react-native";
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
 export default function PeriodeDetail() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  // La période est transmise par la liste : pas de route connue pour en lire une seule
+  const period = useLocalSearchParams<{
+    public_key: string;
+    ordre: string;
+    name: string;
+    type: string;
+    debut: string;
+    fin: string;
+    is_locked: string;
+    annee_public_key: string;
+    annee_name: string;
+    cycle_public_key: string;
+    cycle_slug: string;
+    cycle_name: string;
+    cree_le: string;
+  }>();
   const router = useRouter();
-  const insets = useSafeAreaInsets();
-  const { years, periods, updatePeriod, deletePeriod } = useAcademic();
-  const { canEdit } = useGestion();
+  const { canEdit, canOpen } = useGestion();
   const [editing, setEditing] = useState(false);
 
-  const period = periods.find((p) => p.id === id);
-
-  const header = (
-    <View className="flex-row items-center gap-3">
-      <Pressable
-        onPress={() => router.back()}
-        hitSlop={8}
-        className="h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm active:opacity-80"
-      >
-        <Ionicons name="chevron-back" size={22} color="#2B5EA8" />
-      </Pressable>
-      <Text className="flex-1 font-inter-bold text-[20px] leading-8 text-ink">
-        Détail de la période
-      </Text>
-    </View>
-  );
-
-  // Période introuvable (par exemple déjà supprimée)
-  if (!period) {
-    return (
-      <View
-        className="flex-1 bg-page px-5"
-        style={{ paddingTop: insets.top + 12 }}
-      >
-        <StatusBar style="dark" />
-        {header}
-        <View className="mt-10 items-center gap-2 rounded-3xl bg-white py-12">
-          <Ionicons name="layers-outline" size={28} color="#9AA7B8" />
-          <Text className="font-inter-semibold text-[15px] text-ink">
-            Période introuvable
-          </Text>
-        </View>
-      </View>
-    );
-  }
-
-  const year = years.find((y) => y.id === period.yearId);
-  const st = PERIOD_STATUS[periodStatus(period)];
-  const weeks = Math.round(
-    (period.end.getTime() - period.start.getTime()) / WEEK_MS,
-  );
-
-  const remove = () =>
-    confirmDeletePeriod(period, () => {
-      router.back();
-      deletePeriod(period.id);
-    });
+  const found = !!period.public_key && !!period.debut && !!period.fin;
 
   return (
     <View className="flex-1 bg-page">
       <StatusBar style="dark" />
 
+      <FixedHeader>
+        <View className="flex-row items-center gap-3">
+          <Pressable
+            onPress={() => router.back()}
+            hitSlop={8}
+            className="h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm active:opacity-80"
+          >
+            <Ionicons name="chevron-back" size={22} color="#2B5EA8" />
+          </Pressable>
+          <Text className="flex-1 font-inter-bold text-[20px] leading-8 text-ink">
+            Détail de la période
+          </Text>
+        </View>
+      </FixedHeader>
+
+      {found ? (
+        <PeriodeContent
+          period={period}
+          canEdit={canEdit}
+          canDelete={canOpen("suppression-periodes")}
+          editing={editing}
+          setEditing={setEditing}
+          onSaved={() => {
+            markPeriodesStale();
+            router.back(); // retour à la liste, rechargée avec la modification
+          }}
+        />
+      ) : (
+        // Période introuvable : écran ouvert sans passer par la liste
+        <View className="mx-5 mt-5 items-center gap-2 rounded-3xl bg-white py-12">
+          <Ionicons name="layers-outline" size={28} color="#9AA7B8" />
+          <Text className="font-inter-semibold text-[15px] text-ink">
+            Période introuvable
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+function PeriodeContent({
+  period,
+  canEdit,
+  canDelete,
+  editing,
+  setEditing,
+  onSaved,
+}: {
+  period: {
+    public_key: string;
+    ordre: string;
+    name: string;
+    type: string;
+    debut: string;
+    fin: string;
+    is_locked: string;
+    annee_public_key: string;
+    annee_name: string;
+    cycle_public_key: string;
+    cycle_slug: string;
+    cycle_name: string;
+    cree_le: string;
+  };
+  canEdit: boolean;
+  canDelete: boolean;
+  editing: boolean;
+  setEditing: (value: boolean) => void;
+  onSaved: () => void;
+}) {
+  const start = fromISO(period.debut);
+  const end = fromISO(period.fin);
+  const locked = period.is_locked === "1";
+  const st = PERIOD_STATUS[periodStatus({ start, end })];
+  const weeks = Math.round((end.getTime() - start.getTime()) / WEEK_MS);
+
+  const remove = () =>
+    confirmDeletePeriode({ ...period, is_locked: locked }, async () => {
+      try {
+        await deletePeriode(period.public_key);
+        onSaved(); // même retour qu'après une modification : la liste se recharge
+      } catch (error) {
+        Alert.alert("Suppression impossible", apiErrorMessage(error));
+      }
+    });
+
+  return (
+    <>
       <ScrollView
-        contentContainerStyle={{
-          paddingTop: insets.top + 12,
-          paddingBottom: 32,
-        }}
+        contentContainerStyle={{ paddingTop: 12, paddingBottom: 32 }}
         showsVerticalScrollIndicator={false}
       >
         <View className="w-full max-w-[640px] gap-4 self-center px-5">
-          {header}
-
           {/* Carte principale */}
           <View className="rounded-3xl bg-primary p-5">
             <View className="flex-row items-center gap-3.5">
@@ -92,18 +148,16 @@ export default function PeriodeDetail() {
               </View>
               <View className="flex-1">
                 <Text className="font-inter-bold text-[20px] leading-8 text-white">
-                  {period.label}
+                  {period.name}
                 </Text>
                 <Text
                   numberOfLines={1}
                   className="font-inter text-[13px] text-white/70"
                 >
-                  {year
-                    ? `${yearLabel(year.start, year.end)} · ${year.school}`
-                    : "Année introuvable"}
+                  {period.annee_name} · {period.cycle_name}
                 </Text>
               </View>
-              {period.locked && (
+              {locked && (
                 <Ionicons name="lock-closed" size={20} color="#FFE600" />
               )}
             </View>
@@ -114,42 +168,36 @@ export default function PeriodeDetail() {
             <InfoRow
               icon="calendar-outline"
               label="Année scolaire"
-              value={year ? yearLabel(year.start, year.end) : "—"}
-            />
-            <InfoRow
-              icon="business-outline"
-              label="Établissement"
-              value={year?.school ?? "—"}
-              bordered
+              value={period.annee_name || "—"}
             />
             <InfoRow
               icon="school-outline"
               label="Cycle"
-              value={period.cycle}
+              value={period.cycle_name || "—"}
               bordered
             />
             <InfoRow
               icon="layers-outline"
               label="Type"
-              value={period.type}
+              value={period.type || "—"}
               bordered
             />
             <InfoRow
               icon="keypad-outline"
               label="Numéro"
-              value={String(period.number)}
+              value={period.ordre}
               bordered
             />
             <InfoRow
               icon="calendar-outline"
               label="Date début"
-              value={formatDate(period.start)}
+              value={formatDate(start)}
               bordered
             />
             <InfoRow
               icon="calendar-outline"
               label="Date fin"
-              value={formatDate(period.end)}
+              value={formatDate(end)}
               bordered
             />
             <InfoRow
@@ -171,47 +219,51 @@ export default function PeriodeDetail() {
               }
             />
             <InfoRow
-              icon={period.locked ? "lock-closed-outline" : "lock-open-outline"}
+              icon={locked ? "lock-closed-outline" : "lock-open-outline"}
               label="Verrouillée"
-              value={period.locked ? "Oui" : "Non"}
+              value={locked ? "Oui" : "Non"}
               bordered
             />
           </View>
 
           {/* Actions */}
           {canEdit && (
-            <View className="gap-3">
-              <ActionButton
-                icon="create-outline"
-                label="Modifier cette période"
-                variant="primary"
-                className="w-full"
-                onPress={() => setEditing(true)}
-              />
-              <ActionButton
-                icon="trash-outline"
-                label="Supprimer cette période"
-                variant="danger"
-                className="w-full"
-                onPress={remove}
-              />
-            </View>
+            <ActionButton
+              icon="create-outline"
+              label="Modifier cette période"
+              variant="primary"
+              className="w-full"
+              onPress={() => setEditing(true)}
+            />
+          )}
+          {canDelete && (
+            <ActionButton
+              icon="trash-outline"
+              label="Supprimer cette période"
+              variant="danger"
+              className="w-full"
+              onPress={remove}
+            />
           )}
         </View>
       </ScrollView>
 
       <AddPeriodModal
         visible={editing}
-        period={period}
-        years={years}
-        existing={periods}
+        period={{
+          ...period,
+          ordre: Number(period.ordre),
+          is_locked: locked,
+        }}
         onClose={() => setEditing(false)}
-        onSave={(data) => {
-          updatePeriod(period.id, data);
+        onSave={async (data) => {
+          await updatePeriode(period.public_key, data);
           setEditing(false);
+          showToast("Période modifiée avec succès.");
+          onSaved();
         }}
       />
-    </View>
+    </>
   );
 }
 
