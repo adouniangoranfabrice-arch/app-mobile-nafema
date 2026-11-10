@@ -404,11 +404,6 @@ export default function TeacherHome() {
 
           {selected && (
             <>
-              <WorkToCorrect
-                name={selected.name}
-                task={selected.task}
-                total={selected.students}
-              />
               <Attendance
                 name={selected.name}
                 attendance={selected.attendance}
@@ -438,55 +433,6 @@ export default function TeacherHome() {
 }
 
 /* ---------- Petits composants ---------- */
-
-function WorkToCorrect({
-  name,
-  task,
-  total,
-}: {
-  name: string;
-  task: Activity["task"];
-  total: number;
-}) {
-  const submitted = Math.min(task.submitted, total);
-  const progress = total ? Math.round((submitted / total) * 100) : 0;
-  const s = submitted > 1 ? "s" : "";
-
-  return (
-    <View className="gap-3">
-      <SectionHeader title="Travaux à corriger" action="Tout voir" />
-      <View className="gap-3 rounded-3xl bg-[#FFF6BF] p-5">
-        <View className="flex-row items-center justify-between gap-3">
-          <Text className="flex-1 font-inter-semibold text-[15px] text-ink">
-            {name} · {task.title}
-          </Text>
-          <Text className="font-inter-semibold text-[13px] text-[#7A5F00]">
-            {submitted} copie{s}
-          </Text>
-        </View>
-
-        <Text className="font-inter text-[13px] text-[#7A5F00]">
-          {submitted} remise{s} sur {total} · Échéance le {task.due}
-        </Text>
-
-        <View className="h-2 overflow-hidden rounded-full bg-[#D9E0EE]">
-          <View
-            className="h-full rounded-full bg-primary"
-            style={{ width: `${progress}%` }}
-          />
-        </View>
-
-        <Pressable className="h-[50px] flex-row items-center justify-center gap-2 rounded-2xl bg-primary active:opacity-80">
-          <Text className="font-inter-semibold text-[15px] text-white">
-            Commencer la correction
-          </Text>
-          <Ionicons name="create-outline" size={18} color="#FFFFFF" />
-        </Pressable>
-      </View>
-    </View>
-  );
-}
-
 function Attendance({
   name,
   attendance,
