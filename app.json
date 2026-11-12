@@ -13,10 +13,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E5EAEB",
-        "foregroundImage": "./assets/images/logo_nefama.png",
-        "backgroundImage": "./assets/images/logo_nefama.png",
-        "monochromeImage": "./assets/images/logo_nefama.png"
+        "backgroundColor": "#E4EAEA",
+        "foregroundImage": "./assets/images/adaptive-icon.png"
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.fabrice01.nafema"

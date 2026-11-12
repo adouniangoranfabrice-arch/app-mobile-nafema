@@ -105,7 +105,7 @@ export default function Login() {
           <MotionView>
             <Image
               source={require("@/assets/images/logo_nefama.png")}
-              className="h-[130px] w-[110px]"
+              style={{ width: 110, height: 130 }}
               resizeMode="contain"
             />
           </MotionView>

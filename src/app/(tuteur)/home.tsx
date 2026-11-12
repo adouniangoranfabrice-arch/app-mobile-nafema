@@ -131,7 +131,7 @@ export default function Home() {
             <View className="h-12 w-12 items-center justify-center rounded-xl bg-canvas">
               <Image
                 source={require("@/assets/images/logo_nefama.png")}
-                className="h-9 w-9"
+                style={{ width: 36, height: 36 }}
                 resizeMode="contain"
               />
             </View>
