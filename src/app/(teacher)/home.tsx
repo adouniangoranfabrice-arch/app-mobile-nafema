@@ -1,3 +1,4 @@
+import { Skeleton } from "@/components/ui/Skeleton";
 import { getMe, User } from "@/api/auth";
 import { useLogout } from "@/hooks/use-logout";
 import { useTeacherClasses } from "@/hooks/use-teacher-classes";
@@ -135,6 +136,7 @@ export default function TeacherHome() {
   const teacherClasses = useTeacherClasses();
   const [selectedId, setSelectedId] = useState("");
   const [user, setUser] = useState<User | null>(null);
+  const [meLoading, setMeLoading] = useState(true);
 
   useEffect(() => {
     let active = true;
@@ -142,7 +144,10 @@ export default function TeacherHome() {
       .then((me) => {
         if (active) setUser(me);
       })
-      .catch(() => {}); // sans profil, l'accueil reste utilisable : « Bonjour » sans nom
+      .catch(() => {})
+      .finally(() => {
+        if (active) setMeLoading(false);
+      }); // sans profil, l'accueil reste utilisable : « Bonjour » sans nom
     return () => {
       active = false;
     };
@@ -235,6 +240,11 @@ export default function TeacherHome() {
               <Text className="mt-1 font-inter-bold text-[26px] leading-8 text-ink">
                 Bonjour{user ? `, ${user.full_name}` : ""}
               </Text>
+              {meLoading && (
+                <View className="mt-2">
+                  <Skeleton width="55%" height={12} />
+                </View>
+              )}
               {!!userDetail && (
                 <Text className="mt-1 font-inter text-[13px] text-muted">
                   {userDetail}
@@ -249,6 +259,8 @@ export default function TeacherHome() {
                 <Text className="font-inter-bold text-base text-primary">
                   {initials(user.full_name)}
                 </Text>
+              ) : meLoading ? (
+                <Skeleton width={56} height={56} radius={28} />
               ) : (
                 <Ionicons name="person-outline" size={22} color="#2B5EA8" />
               )}

@@ -1,4 +1,11 @@
-import { createSalle, getSalles, Salle } from "@/api/salles";
+import { SkeletonList } from "@/components/ui/Skeleton";
+import {
+  createSalle,
+  getSalles,
+  Salle,
+  takeSallesStale,
+  updateSalle,
+} from "@/api/salles";
 import AddSalleModal from "@/components/gestion/AddSalleModal";
 import FixedHeader from "@/components/ui/FixedHeader";
 import PageBar from "@/components/ui/PageBar";
@@ -8,7 +15,7 @@ import { useGestion } from "@/hooks/use-gestion";
 import { IconButton } from "@/organisation/ui";
 import { normalize } from "@/utils/text";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -38,6 +45,7 @@ export default function Salles() {
   const [query, setQuery] = useState("");
   const [requestedPage, setRequestedPage] = useState(1);
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Salle | null>(null);
 
   const load = useCallback(async (next: "loading" | "refreshing") => {
     const request = ++lastRequest.current;
@@ -59,20 +67,36 @@ export default function Salles() {
     };
   }, [load]);
 
+  // Retour d'un détail où la salle a été modifiée : on recharge
+  useFocusEffect(
+    useCallback(() => {
+      if (takeSallesStale()) load("refreshing");
+    }, [load]),
+  );
+
+  const closeForm = () => {
+    setAdding(false);
+    setEditing(null);
+  };
+
   const openDetail = (s: Salle) =>
     router.push(
       href("salle-detail", {
         code: s.code,
+        public_key: s.public_key,
         name: s.name,
         capacite: s.capacite === null ? "" : String(s.capacite),
+        type_salle: s.type_salle,
         etab_name: s.etab_name,
+        created_at: s.created_at,
+        updated_at: s.updated_at,
       }),
     );
 
-  // Recherche par code, nom ou établissement (sans tenir compte des accents)
+  // Recherche par code, nom, type ou établissement (sans tenir compte des accents)
   const q = normalize(query);
   const visible = salles.filter(
-    (s) => !q || normalize(`${s.code} ${s.name} ${s.etab_name}`).includes(q),
+    (s) => !q || normalize(`${s.code} ${s.name} ${s.type_salle} ${s.etab_name}`).includes(q),
   );
 
   const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
@@ -165,6 +189,7 @@ export default function Salles() {
                   className="mt-0.5 text-xs text-muted"
                 >
                   {item.code}
+                  {item.type_salle ? ` · ${item.type_salle}` : ""}
                   {item.capacite !== null ? ` · ${item.capacite} places` : ""}
                 </Text>
                 <Text
@@ -175,12 +200,23 @@ export default function Salles() {
                 </Text>
               </Pressable>
 
-              <IconButton
-                icon="eye-outline"
-                color="#1B2A41"
-                label="Voir"
-                onPress={() => openDetail(item)}
-              />
+              {/* Actions : voir, modifier */}
+              <View className="flex-row items-center gap-1.5">
+                <IconButton
+                  icon="eye-outline"
+                  color="#1B2A41"
+                  label="Voir"
+                  onPress={() => openDetail(item)}
+                />
+                {canEdit && (
+                  <IconButton
+                    icon="create-outline"
+                    color="#2B5EA8"
+                    label="Modifier"
+                    onPress={() => setEditing(item)}
+                  />
+                )}
+              </View>
             </View>
           </View>
         )}
@@ -218,9 +254,13 @@ export default function Salles() {
               </View>
             </View>
           ) : loading ? (
-            <View className="items-center py-4">
-              <ActivityIndicator color="#2B5EA8" />
-            </View>
+            shown.length === 0 ? (
+              <SkeletonList />
+            ) : (
+              <View className="items-center py-4">
+                <ActivityIndicator color="#2B5EA8" />
+              </View>
+            )
           ) : undefined
         }
       />
@@ -234,13 +274,16 @@ export default function Salles() {
         onNext={() => setRequestedPage(page + 1)}
       />
 
-      {/* Formulaire d'ajout */}
+      {/* Formulaire : ajout ou modification */}
       <AddSalleModal
-        visible={adding}
-        onClose={() => setAdding(false)}
+        visible={adding || editing !== null}
+        salle={editing}
+        onClose={closeForm}
         onSave={async (data) => {
-          const message = await createSalle(data);
-          setAdding(false);
+          const message = editing
+            ? await updateSalle(editing.public_key, data)
+            : await createSalle(data);
+          closeForm();
           load("refreshing");
           showToast(message);
         }}

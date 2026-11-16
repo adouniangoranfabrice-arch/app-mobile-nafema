@@ -1,32 +1,51 @@
 import { apiErrorMessage } from "@/api/client";
+import { Salle, SalleInput } from "@/api/salles";
 import { FormSheet, SheetModal } from "@/components/ui/FormSheet";
 import Input from "@/components/ui/Input";
 import { showToast } from "@/components/ui/Toast";
 import { useState } from "react";
 import { Text } from "react-native";
 
-type SalleData = { code: string; libelle: string; capacite?: number };
+/** Ce dont le formulaire a besoin pour se pré-remplir en modification */
+export type SalleToEdit = Pick<
+  Salle,
+  "public_key" | "code" | "name" | "capacite" | "type_salle"
+>;
 
 type Props = {
   visible: boolean;
+  salle?: SalleToEdit | null; // si fournie : mode modification
   onClose: () => void;
-  onSave: (salle: SalleData) => Promise<void>;
+  onSave: (salle: SalleInput) => Promise<void>;
 };
 
-export default function AddSalleModal({ visible, onClose, onSave }: Props) {
+export default function AddSalleModal({ visible, salle, onClose, onSave }: Props) {
   return (
     <SheetModal visible={visible} onClose={onClose}>
-      <SalleForm onClose={onClose} onSave={onSave} />
+      <SalleForm
+        key={salle?.public_key ?? "new"}
+        salle={salle ?? null}
+        onClose={onClose}
+        onSave={onSave}
+      />
     </SheetModal>
   );
 }
 
-type Errors = Partial<Record<keyof SalleData, string>>;
+type Errors = Partial<Record<keyof SalleInput, string>>;
 
-function SalleForm({ onClose, onSave }: Omit<Props, "visible">) {
-  const [code, setCode] = useState("");
-  const [libelle, setLibelle] = useState("");
-  const [capacite, setCapacite] = useState("");
+function SalleForm({
+  salle,
+  onClose,
+  onSave,
+}: Omit<Props, "visible" | "salle"> & { salle: SalleToEdit | null }) {
+  const isEdit = !!salle;
+  const [slug, setSlug] = useState(salle?.code ?? "");
+  const [name, setName] = useState(salle?.name ?? "");
+  const [capacity, setCapacity] = useState(
+    salle?.capacite != null ? String(salle.capacite) : "",
+  );
+  const [typeSalle, setTypeSalle] = useState(salle?.type_salle ?? "");
   const [errors, setErrors] = useState<Errors>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
@@ -35,7 +54,7 @@ function SalleForm({ onClose, onSave }: Omit<Props, "visible">) {
   const clear = (key: keyof Errors) =>
     setErrors((e) => ({ ...e, [key]: undefined }));
 
-  const save = async (data: SalleData) => {
+  const save = async (data: SalleInput) => {
     setSaving(true);
     setSaveError("");
     try {
@@ -51,29 +70,33 @@ function SalleForm({ onClose, onSave }: Omit<Props, "visible">) {
   const submit = () => {
     if (saving) return;
     const next: Errors = {};
-    const places = capacite.trim();
+    const places = capacity.trim();
+    const type = typeSalle.trim();
 
-    if (!code.trim()) next.code = "Le code est obligatoire";
-    if (!libelle.trim()) next.libelle = "Le nom est obligatoire";
-    if (places && !/^\d+$/.test(places))
-      next.capacite = "La capacité doit être un nombre entier";
+    if (!slug.trim()) next.slug = "Le code est obligatoire";
+    if (!name.trim()) next.name = "Le nom est obligatoire";
+    if (!places) next.capacity = "La capacité est obligatoire";
+    else if (!/^\d+$/.test(places))
+      next.capacity = "La capacité doit être un nombre entier";
+    if (!type) next.type_salle = "Le type de salle est obligatoire";
 
     setErrors(next);
     if (Object.keys(next).length > 0) return false;
 
     save({
-      code: code.trim(),
-      libelle: libelle.trim(),
-      capacite: places ? Number(places) : undefined,
+      slug: slug.trim(),
+      name: name.trim(),
+      capacity: Number(places),
+      type_salle: type,
     });
     return true;
   };
 
   return (
     <FormSheet
-      title="Nouvelle salle"
-      subtitle="Créez une nouvelle salle"
-      submitLabel={saving ? "Envoi…" : "Créer"}
+      title={isEdit ? "Modifier la salle" : "Nouvelle salle"}
+      subtitle={isEdit && salle ? salle.name : "Créez une nouvelle salle"}
+      submitLabel={saving ? "Envoi…" : isEdit ? "Enregistrer" : "Créer"}
       showError={hasErrors}
       onClose={onClose}
       onSubmit={submit}
@@ -82,39 +105,51 @@ function SalleForm({ onClose, onSave }: Omit<Props, "visible">) {
         label="Code"
         icon="barcode-outline"
         placeholder="Ex. LABO-01"
-        value={code}
+        value={slug}
         onChangeText={(t) => {
-          setCode(t.toUpperCase());
-          clear("code");
+          setSlug(t.toUpperCase());
+          clear("slug");
         }}
         autoCapitalize="characters"
         autoCorrect={false}
-        error={errors.code}
+        error={errors.slug}
       />
 
       <Input
         label="Nom"
         icon="text-outline"
         placeholder="Ex. Salle de Physique"
-        value={libelle}
+        value={name}
         onChangeText={(t) => {
-          setLibelle(t);
-          clear("libelle");
+          setName(t);
+          clear("name");
         }}
-        error={errors.libelle}
+        error={errors.name}
       />
 
       <Input
         label="Capacité"
         icon="people-outline"
         placeholder="Ex. 20"
-        value={capacite}
+        value={capacity}
         onChangeText={(t) => {
-          setCapacite(t);
-          clear("capacite");
+          setCapacity(t);
+          clear("capacity");
         }}
         keyboardType="number-pad"
-        error={errors.capacite}
+        error={errors.capacity}
+      />
+
+      <Input
+        label="Type de salle"
+        icon="pricetag-outline"
+        placeholder="Ex. Laboratoire"
+        value={typeSalle}
+        onChangeText={(t) => {
+          setTypeSalle(t);
+          clear("type_salle");
+        }}
+        error={errors.type_salle}
       />
 
       {saveError ? (

@@ -1,65 +1,53 @@
+import { apiErrorMessage } from "@/api/client";
+import { deleteIepp, markIeppsStale, updateIepp } from "@/api/iepps";
 import AddIeppModal from "@/components/gestion/AddIeppModal";
 import ActionButton from "@/components/ui/ActionButton";
 import FixedHeader from "@/components/ui/FixedHeader";
 import { showToast } from "@/components/ui/Toast";
-import { useDrenas } from "@/context/DrenasContext";
+import { useGestion } from "@/hooks/use-gestion";
 import { confirmDeleteIepp } from "@/utils/confirm";
+import { formatDateTime } from "@/utils/dates";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { ReactNode, useState } from "react";
+import { useState } from "react";
 import { Platform, Pressable, ScrollView, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const MONO = Platform.select({ ios: "Menlo", default: "monospace" });
 
 export default function IeppDetail() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  // L'IEPP est transmise par la liste (GET /iepps)
+  const iepp = useLocalSearchParams<{
+    public_key: string;
+    slug: string;
+    name: string;
+    dren_public_key: string;
+    dren_slug: string;
+    dren_name: string;
+    created_at: string;
+    updated_at: string;
+  }>();
   const router = useRouter();
-  const insets = useSafeAreaInsets();
-  const { drenas, iepps, updateIepp, deleteIepp } = useDrenas();
+  const { canEdit } = useGestion();
   const [editing, setEditing] = useState(false);
 
-  const iepp = iepps.find((i) => i.public_key === id);
-
-  const header = (
-    <View className="flex-row items-center gap-3">
-      <Pressable
-        onPress={() => router.back()}
-        hitSlop={8}
-        className="h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm active:opacity-80"
-      >
-        <Ionicons name="chevron-back" size={22} color="#2B5EA8" />
-      </Pressable>
-      <Text className="flex-1 font-inter-bold text-[20px] leading-8 text-ink">
-        Détail de l'IEPP
-      </Text>
-    </View>
-  );
-
-  // IEPP introuvable (par exemple déjà supprimée)
-  if (!iepp) {
-    return (
-      <View
-        className="flex-1 bg-page px-5"
-        style={{ paddingTop: insets.top + 12 }}
-      >
-        <StatusBar style="dark" />
-        {header}
-        <View className="mt-10 items-center gap-2 rounded-3xl bg-white py-12">
-          <Ionicons name="business-outline" size={28} color="#9AA7B8" />
-          <Text className="font-inter-semibold text-[15px] text-ink">
-            IEPP introuvable
-          </Text>
-        </View>
-      </View>
-    );
-  }
+  const current = {
+    public_key: iepp.public_key ?? "",
+    slug: iepp.slug ?? "",
+    name: iepp.name ?? "",
+    dren_public_key: iepp.dren_public_key ?? "",
+  };
 
   const remove = () =>
-    confirmDeleteIepp(iepp, () => {
-      router.back();
-      deleteIepp(iepp.public_key);
+    confirmDeleteIepp(current, async () => {
+      try {
+        const message = await deleteIepp(current.public_key);
+        markIeppsStale();
+        showToast(message);
+        router.back(); // retour à la liste, rechargée sans cette IEPP
+      } catch (error) {
+        showToast(apiErrorMessage(error), "error");
+      }
     });
 
   return (
@@ -67,117 +55,137 @@ export default function IeppDetail() {
       <StatusBar style="dark" />
 
       <FixedHeader>
-        {header}
+        <View className="flex-row items-center gap-3">
+          <Pressable
+            onPress={() => router.back()}
+            hitSlop={8}
+            className="h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm active:opacity-80"
+          >
+            <Ionicons name="chevron-back" size={22} color="#2B5EA8" />
+          </Pressable>
+          <Text className="flex-1 font-inter-bold text-[20px] leading-8 text-ink">
+            Détail de l&apos;IEPP
+          </Text>
+        </View>
       </FixedHeader>
 
       <ScrollView
-        contentContainerStyle={{
-          paddingTop: 12,
-          paddingBottom: 32,
-        }}
+        contentContainerStyle={{ paddingTop: 12, paddingBottom: 32 }}
         showsVerticalScrollIndicator={false}
       >
-        <View className="w-full max-w-[640px] gap-4 self-center px-5">
-          {/* Carte principale */}
-          <View className="rounded-3xl bg-primary p-5">
-            <View className="flex-row items-center gap-3.5">
-              <View className="h-12 w-12 items-center justify-center rounded-xl bg-white/15">
-                <Ionicons name="business-outline" size={24} color="#FFE600" />
-              </View>
-              <View className="flex-1">
-                <Text
-                  numberOfLines={2}
-                  className="font-inter-bold text-[22px] leading-7 text-white"
-                >
-                  {iepp.name}
-                </Text>
-                <Text
-                  numberOfLines={1}
-                  className="font-inter text-[13px] text-white/70"
-                >
-                  {iepp.dren.name}
-                </Text>
-              </View>
+        {/* IEPP introuvable : écran ouvert sans passer par la liste */}
+        {!iepp.public_key || !iepp.name ? (
+          <View className="w-full max-w-[640px] self-center px-5">
+            <View className="items-center gap-2 rounded-3xl bg-white py-12">
+              <Ionicons name="business-outline" size={28} color="#9AA7B8" />
+              <Text className="font-inter-semibold text-[15px] text-ink">
+                IEPP introuvable
+              </Text>
             </View>
           </View>
+        ) : (
+          <View className="w-full max-w-[640px] gap-4 self-center px-5">
+            {/* Carte principale */}
+            <View className="rounded-3xl bg-primary p-5">
+              <View className="flex-row items-center gap-3.5">
+                <View className="h-12 w-12 items-center justify-center rounded-xl bg-white/15">
+                  <Ionicons name="business-outline" size={24} color="#FFE600" />
+                </View>
+                <View className="flex-1">
+                  <Text
+                    numberOfLines={2}
+                    className="font-inter-bold text-[22px] leading-7 text-white"
+                  >
+                    {iepp.name}
+                  </Text>
+                  {!!iepp.slug && (
+                    <Text
+                      style={{ fontFamily: MONO }}
+                      className="text-[13px] text-white/70"
+                    >
+                      {iepp.slug}
+                    </Text>
+                  )}
+                </View>
+              </View>
+            </View>
 
-          {/* Informations : Code, Nom, DRENA */}
-          <View className="rounded-3xl bg-white px-4 shadow-sm">
-            <InfoRow
-              icon="barcode-outline"
-              label="Code"
-              value={iepp.code || "—"}
-              mono
-            />
-            <InfoRow
-              icon="business-outline"
-              label="Nom"
-              value={iepp.name}
-              bordered
-            />
-            <InfoRow
-              icon="map-outline"
-              label="DRENA"
-              value={iepp.dren.name}
-              bordered
-            />
-            <InfoRow
-              icon="barcode-outline"
-              label="Code DRENA"
-              value={iepp.dren.code}
-              bordered
-              mono
-            />
+            {/* Informations */}
+            <View className="rounded-3xl bg-white px-4 shadow-sm">
+              <InfoRow icon="text-outline" label="Nom" value={iepp.name} />
+              <InfoRow
+                icon="barcode-outline"
+                label="Code"
+                value={iepp.slug || "—"}
+                bordered
+                mono
+              />
+              <InfoRow
+                icon="map-outline"
+                label="DRENA"
+                value={iepp.dren_name || "—"}
+                bordered
+              />
+              {!!iepp.dren_slug && (
+                <InfoRow
+                  icon="pricetag-outline"
+                  label="Code DRENA"
+                  value={iepp.dren_slug}
+                  bordered
+                  mono
+                />
+              )}
+              {!!iepp.created_at && (
+                <InfoRow
+                  icon="add-circle-outline"
+                  label="Créée le"
+                  value={formatDateTime(iepp.created_at) || "—"}
+                  bordered
+                />
+              )}
+              {!!iepp.updated_at && (
+                <InfoRow
+                  icon="time-outline"
+                  label="Mise à jour le"
+                  value={formatDateTime(iepp.updated_at) || "—"}
+                  bordered
+                />
+              )}
+            </View>
+
+            {/* Actions (selon les droits de l'espace) */}
+            {canEdit && (
+              <View className="gap-3">
+                <ActionButton
+                  icon="create-outline"
+                  label="Modifier cette IEPP"
+                  variant="primary"
+                  className="w-full"
+                  onPress={() => setEditing(true)}
+                />
+                <ActionButton
+                  icon="trash-outline"
+                  label="Supprimer cette IEPP"
+                  variant="danger"
+                  className="w-full"
+                  onPress={remove}
+                />
+              </View>
+            )}
           </View>
-
-          {/* Raccourci vers la DRENA */}
-          <ActionButton
-            icon="map-outline"
-            label="Voir la DRENA"
-            className="w-full"
-            onPress={() =>
-              router.push({
-                pathname: "/(superadmin)/gestion/drena-detail",
-                params: {
-                  public_key: iepp.dren.public_key,
-                  slug: iepp.dren.code,
-                  name: iepp.dren.name,
-                  readonly: "1", // DRENA fictive : le serveur ne la connaît pas
-                },
-              })
-            }
-          />
-
-          {/* Actions */}
-          <View className="gap-3">
-            <ActionButton
-              icon="create-outline"
-              label="Modifier cette IEPP"
-              variant="primary"
-              className="w-full"
-              onPress={() => setEditing(true)}
-            />
-            <ActionButton
-              icon="trash-outline"
-              label="Supprimer cette IEPP"
-              variant="danger"
-              className="w-full"
-              onPress={remove}
-            />
-          </View>
-        </View>
+        )}
       </ScrollView>
 
       <AddIeppModal
         visible={editing}
-        iepp={iepp}
-        drenas={drenas}
-        existing={iepps}
+        iepp={current}
         onClose={() => setEditing(false)}
-        onSave={(data) => {
-          updateIepp(iepp.public_key, data);
+        onSave={async (data) => {
+          const message = await updateIepp(current.public_key, data);
           setEditing(false);
-          showToast("IEPP modifiée avec succès.");
+          markIeppsStale();
+          showToast(message);
+          router.back(); // retour à la liste, rechargée avec la modification
         }}
       />
     </View>
@@ -193,7 +201,7 @@ function InfoRow({
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
-  value: ReactNode;
+  value: string;
   bordered?: boolean;
   mono?: boolean;
 }) {

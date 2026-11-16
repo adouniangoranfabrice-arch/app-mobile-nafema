@@ -1,3 +1,4 @@
+import { SkeletonList } from "@/components/ui/Skeleton";
 import { apiErrorMessage } from "@/api/client";
 import { createDren, deleteDren, updateDren } from "@/api/drens";
 import AddDrenaModal from "@/components/gestion/AddDrenaModal";
@@ -6,6 +7,7 @@ import SearchBar from "@/components/ui/SearchBar";
 import { showToast } from "@/components/ui/Toast";
 import { Drena } from "@/data/drenas";
 import { useDrenaList } from "@/hooks/use-drena-list";
+import { useGestion } from "@/hooks/use-gestion";
 import { IconButton } from "@/organisation/ui";
 import { confirmDeleteDrena } from "@/utils/confirm";
 import { Ionicons } from "@expo/vector-icons";
@@ -28,6 +30,7 @@ const SEARCH_DELAY_MS = 300;
 
 export default function Drenas() {
   const router = useRouter();
+  const { href } = useGestion();
   const insets = useSafeAreaInsets();
   const listRef = useRef<FlatList<Drena>>(null);
 
@@ -58,11 +61,15 @@ export default function Drenas() {
     retry,
   } = useDrenaList(search);
 
+  // Le détail s'ouvre dans l'espace courant (super admin ou admin école)
   const openDetail = (d: Drena) =>
-    router.push({
-      pathname: "/(superadmin)/gestion/drena-detail",
-      params: { public_key: d.public_key, slug: d.slug, name: d.name },
-    });
+    router.push(
+      href("drena-detail", {
+        public_key: d.public_key,
+        slug: d.slug,
+        name: d.name,
+      }),
+    );
 
   const closeForm = () => {
     setAdding(false);
@@ -231,9 +238,13 @@ export default function Drenas() {
               </View>
             </View>
           ) : loading ? (
-            <View className="items-center py-4">
-              <ActivityIndicator color="#2B5EA8" />
-            </View>
+            shown.length === 0 ? (
+              <SkeletonList />
+            ) : (
+              <View className="items-center py-4">
+                <ActivityIndicator color="#2B5EA8" />
+              </View>
+            )
           ) : undefined
         }
       />

@@ -1,3 +1,4 @@
+import { Skeleton } from "@/components/ui/Skeleton";
 import { getMe, User } from "@/api/auth";
 import { Fill } from "@/components/PlatformStats";
 import SchoolStats from "@/components/SchoolStats";
@@ -67,6 +68,7 @@ export default function AdminHome() {
   const insets = useSafeAreaInsets();
   const { revealed, scrollProps, track } = useReveal();
   const [user, setUser] = useState<User | null>(null);
+  const [meLoading, setMeLoading] = useState(true);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
@@ -77,6 +79,9 @@ export default function AdminHome() {
       })
       .catch(() => {
         if (active) setFailed(true);
+      })
+      .finally(() => {
+        if (active) setMeLoading(false);
       });
     return () => {
       active = false;
@@ -177,6 +182,8 @@ export default function AdminHome() {
                 <Text className="font-inter-bold text-base text-primary">
                   {initials(user.full_name)}
                 </Text>
+              ) : meLoading ? (
+                <Skeleton width={56} height={56} radius={28} />
               ) : (
                 <Ionicons name="person-outline" size={22} color="#2B5EA8" />
               )}
@@ -190,9 +197,16 @@ export default function AdminHome() {
                 <Ionicons name="business-outline" size={24} color="#FFE600" />
               </View>
               <View className="flex-1">
-                <Text className="font-inter-bold text-[22px] text-white">
-                  {schoolName}
-                </Text>
+                {meLoading ? (
+                  <View className="gap-2 py-1">
+                    <Skeleton width="70%" height={20} color="rgba(255,255,255,0.25)" />
+                    <Skeleton width="40%" height={12} color="rgba(255,255,255,0.18)" />
+                  </View>
+                ) : (
+                  <Text className="font-inter-bold text-[22px] text-white">
+                    {schoolName}
+                  </Text>
+                )}
                 {!!school && (
                   <Text className="font-inter text-[13px] text-white/70">
                     {SCHOOL_TYPES[school.type] ?? school.type}

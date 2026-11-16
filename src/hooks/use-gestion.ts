@@ -14,6 +14,9 @@ const ACCESS = {
     canEdit: true,
     screens: [
       "drenas",
+      "iepps",
+      "classes-api",
+      "finances",
       "annees",
       "periodes",
       "inscriptions",
@@ -22,6 +25,7 @@ const ACCESS = {
       "absences",
       "familles",
       "suppression-periodes",
+      "suppression-frais", // seul le super admin supprime un frais
       "attribution",
       "suivi-modules",
     ],
@@ -43,7 +47,17 @@ const ACCESS = {
   "(adminschool)": {
     canEdit: true,
     school: "Collège des Almadies", // à remplacer par l'école du compte quand ces données viendront de l'API
-    screens: ["annees", "periodes", "inscriptions", "eleves", "familles"],
+    screens: [
+      "annees",
+      "periodes",
+      "inscriptions",
+      "eleves",
+      "familles",
+      "classes-api", // la rubrique Classes ouvre l'écran branché sur /classes
+      "iepps",
+      "drenas",
+      "finances",
+    ],
     entities: [
       "niveaux",
       "cycles",

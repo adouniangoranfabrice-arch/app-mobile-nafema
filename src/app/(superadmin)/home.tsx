@@ -1,3 +1,4 @@
+import { Skeleton } from "@/components/ui/Skeleton";
 import { getMe, User } from "@/api/auth";
 import PlatformStats from "@/components/PlatformStats";
 import { MotionView, PressScale, Reveal } from "@/components/ui/MotionView";
@@ -122,6 +123,7 @@ export default function PlatformHome() {
   const insets = useSafeAreaInsets();
   const { revealed, scrollProps, track } = useReveal();
   const [user, setUser] = useState<User | null>(null);
+  const [meLoading, setMeLoading] = useState(true);
 
   useEffect(() => {
     let active = true;
@@ -129,7 +131,10 @@ export default function PlatformHome() {
       .then((me) => {
         if (active) setUser(me);
       })
-      .catch(() => {}); // sans profil, l'accueil reste utilisable : « Bonjour » sans nom
+      .catch(() => {})
+      .finally(() => {
+        if (active) setMeLoading(false);
+      }); // sans profil, l'accueil reste utilisable : « Bonjour » sans nom
     return () => {
       active = false;
     };
@@ -224,6 +229,8 @@ export default function PlatformHome() {
                   <Text className="font-inter-bold text-base text-primary">
                     {initials(user.full_name)}
                   </Text>
+                ) : meLoading ? (
+                  <Skeleton width={56} height={56} radius={28} />
                 ) : (
                   <Ionicons name="person-outline" size={22} color="#2B5EA8" />
                 )}

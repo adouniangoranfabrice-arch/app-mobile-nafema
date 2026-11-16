@@ -1,39 +1,30 @@
 import { apiErrorMessage } from "@/api/client";
+import { Iepp, IeppInput } from "@/api/iepps";
 import { FormSheet, SheetModal } from "@/components/ui/FormSheet";
 import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
 import { showToast } from "@/components/ui/Toast";
-import { Drena, Iepp, IeppData } from "@/data/drenas";
+import { useAllDrenas } from "@/hooks/use-all-drenas";
 import { useState } from "react";
 import { Text } from "react-native";
 
+/** Ce dont le formulaire a besoin pour se pré-remplir en modification */
+export type IeppToEdit = Pick<Iepp, "public_key" | "slug" | "name" | "dren_public_key">;
+
 type Props = {
   visible: boolean;
-  iepp?: Iepp | null; // si fourni : mode modification
-  drenas: Drena[];
-  drenasStatus?: "loading" | "idle" | "failed"; // quand les DRENA viennent de l'API
-  existing: Iepp[];
+  iepp?: IeppToEdit | null; // si fournie : mode modification
   onClose: () => void;
-  onSave: (iepp: IeppData) => void | Promise<void>;
+  onSave: (iepp: IeppInput) => Promise<void>;
 };
 
-export default function AddIeppModal({
-  visible,
-  iepp,
-  drenas,
-  drenasStatus,
-  existing,
-  onClose,
-  onSave,
-}: Props) {
+export default function AddIeppModal({ visible, iepp, onClose, onSave }: Props) {
   return (
     <SheetModal visible={visible} onClose={onClose}>
       <IeppForm
         key={iepp?.public_key ?? "new"}
         iepp={iepp ?? null}
-        drenas={drenas}
-        drenasStatus={drenasStatus}
-        existing={existing}
+        visible={visible}
         onClose={onClose}
         onSave={onSave}
       />
@@ -41,26 +32,25 @@ export default function AddIeppModal({
   );
 }
 
-type Errors = Partial<Record<"drenaId" | "code" | "name", string>>;
+type Errors = Partial<Record<keyof IeppInput, string>>;
 
 function IeppForm({
   iepp,
-  drenas,
-  drenasStatus,
-  existing,
+  visible,
   onClose,
   onSave,
-}: Omit<Props, "visible" | "iepp"> & { iepp: Iepp | null }) {
+}: Omit<Props, "iepp"> & { iepp: IeppToEdit | null }) {
   const isEdit = !!iepp;
+  // Les DRENA viennent de la base, chargées à l'ouverture du formulaire
+  const { drenas, status: drenasStatus } = useAllDrenas(visible);
 
-  const [drenaId, setDrenaId] = useState(iepp?.dren.public_key ?? "");
-  const [code, setCode] = useState(iepp?.code ?? "");
+  const [drena, setDrena] = useState(iepp?.dren_public_key ?? "");
+  const [slug, setSlug] = useState(iepp?.slug ?? "");
   const [name, setName] = useState(iepp?.name ?? "");
   const [errors, setErrors] = useState<Errors>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
 
-  const others = existing.filter((i) => i.public_key !== iepp?.public_key);
   const hasErrors = Object.values(errors).some(Boolean);
   const clear = (key: keyof Errors) =>
     setErrors((e) => ({ ...e, [key]: undefined }));
@@ -69,7 +59,7 @@ function IeppForm({
     .sort((a, b) => a.name.localeCompare(b.name, "fr", { numeric: true }))
     .map((d) => ({ value: d.public_key, label: d.name }));
 
-  const save = async (data: IeppData) => {
+  const save = async (data: IeppInput) => {
     setSaving(true);
     setSaveError("");
     try {
@@ -85,24 +75,15 @@ function IeppForm({
   const submit = () => {
     if (saving) return;
     const next: Errors = {};
-    const c = code.trim();
 
-    if (!drenaId) next.drenaId = "Choisis la DRENA de rattachement";
+    if (!drena) next.drena = "Choisissez la DRENA de rattachement";
+    if (!slug.trim()) next.slug = "Le code est obligatoire";
     if (!name.trim()) next.name = "Le nom est obligatoire";
-
-    // Le code est facultatif : on ne le contrôle que s'il est renseigné
-    if (c) {
-      if (!/^[A-Z0-9-]+$/.test(c))
-        next.code =
-          "Lettres majuscules, chiffres et tirets uniquement (ex. ABIDJAN-1-N)";
-      else if (others.some((i) => i.code === c))
-        next.code = "Ce code existe déjà";
-    }
 
     setErrors(next);
     if (Object.keys(next).length > 0) return false;
 
-    save({ drena_id: drenaId, code: c, nom: name.trim() });
+    save({ drena, slug: slug.trim(), name: name.trim() });
     return true;
   };
 
@@ -116,24 +97,24 @@ function IeppForm({
       onSubmit={submit}
     >
       <Select
-        label="DRENA *"
+        label="DRENA"
         icon="map-outline"
         placeholder={
           drenasStatus === "loading"
             ? "Chargement des DRENA…"
             : "Sélectionner une DRENA"
         }
-        value={drenaId}
+        value={drena}
         options={drenaOptions}
         searchable
         onChange={(v) => {
-          setDrenaId(v);
-          clear("drenaId");
+          setDrena(v);
+          clear("drena");
         }}
         error={
-          errors.drenaId ??
+          errors.drena ??
           (drenasStatus === "failed"
-            ? "Impossible de charger les DRENA. Ferme puis rouvre ce formulaire."
+            ? "Impossible de charger les DRENA. Fermez puis rouvrez ce formulaire."
             : undefined)
         }
       />
@@ -142,19 +123,19 @@ function IeppForm({
         label="Code"
         icon="barcode-outline"
         placeholder="Ex. ABIDJAN-1-N"
-        value={code}
+        value={slug}
         // Le code est mis en majuscules ; les espaces deviennent des tirets
         onChangeText={(t) => {
-          setCode(t.toUpperCase().replace(/\s+/g, "-"));
-          clear("code");
+          setSlug(t.toUpperCase().replace(/\s+/g, "-"));
+          clear("slug");
         }}
         autoCapitalize="characters"
         autoCorrect={false}
-        error={errors.code}
+        error={errors.slug}
       />
 
       <Input
-        label="Nom *"
+        label="Nom"
         icon="business-outline"
         placeholder="Ex. IEPP Abidjan 1 Nord"
         value={name}

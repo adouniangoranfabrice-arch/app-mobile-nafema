@@ -41,3 +41,25 @@ export const ageOf = (birth: Date, now = new Date()) => {
   if (!hadBirthday) age -= 1;
   return age;
 };
+
+/**
+ * Date et heure renvoyées par l'API → « 5 nov. 2026 à 09:24 ».
+ * Accepte « 2026-11-05 09:24:37 » (heure locale du serveur) et l'ISO « 2026-11-05T09:24:37.000000Z » (UTC).
+ * Renvoie "" si la valeur est absente ou illisible.
+ */
+export const formatDateTime = (raw?: string | null) => {
+  if (!raw) return "";
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
+  if (!m) return "";
+  let d: Date;
+  if (/[zZ]|[+-]\d{2}:?\d{2}$/.test(raw)) {
+    d = new Date(raw.replace(/\.(\d{3})\d+/, ".$1")); // fuseau donné : converti en heure locale
+    if (Number.isNaN(d.getTime())) return "";
+  } else {
+    d = new Date(+m[1], +m[2] - 1, +m[3], +(m[4] ?? 0), +(m[5] ?? 0));
+  }
+  if (m[4] === undefined) return formatDate(d);
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${formatDate(d)} à ${hh}:${mm}`;
+};

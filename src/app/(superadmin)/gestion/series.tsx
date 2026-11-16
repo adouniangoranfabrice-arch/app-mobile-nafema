@@ -1,3 +1,4 @@
+import { SkeletonList } from "@/components/ui/Skeleton";
 import { Cycle, getCycles } from "@/api/cycles";
 import { createSerie, getSeries, Serie } from "@/api/series";
 import AddSerieModal from "@/components/gestion/AddSerieModal";
@@ -39,7 +40,6 @@ export default function Series() {
     "loading" | "refreshing" | "idle" | "failed"
   >("loading");
   const [cycles, setCycles] = useState<Cycle[]>([]);
-  const [cyclesFailed, setCyclesFailed] = useState(false);
   const [query, setQuery] = useState("");
   const [cycleFilter, setCycleFilter] = useState("all");
   const [requestedPage, setRequestedPage] = useState(1);
@@ -65,22 +65,19 @@ export default function Series() {
     };
   }, [load]);
 
-  // Les vrais cycles, pour le filtre et le formulaire. Rechargés à chaque ouverture du formulaire
+  // Les vrais cycles, pour le filtre
   useEffect(() => {
     let active = true;
     getCycles()
       .then((all) => {
         if (!active) return;
         setCycles(all);
-        setCyclesFailed(false);
       })
-      .catch(() => {
-        if (active) setCyclesFailed(true);
-      });
+      .catch(() => {}); // sans cycles, le filtre propose seulement « Tous les cycles »
     return () => {
       active = false;
     };
-  }, [adding]);
+  }, []);
 
   const openDetail = (s: Serie) =>
     router.push(
@@ -271,9 +268,13 @@ export default function Series() {
               </View>
             </View>
           ) : loading ? (
-            <View className="items-center py-4">
-              <ActivityIndicator color="#2B5EA8" />
-            </View>
+            shown.length === 0 ? (
+              <SkeletonList />
+            ) : (
+              <View className="items-center py-4">
+                <ActivityIndicator color="#2B5EA8" />
+              </View>
+            )
           ) : undefined
         }
       />
@@ -290,17 +291,9 @@ export default function Series() {
       {/* Formulaire d'ajout */}
       <AddSerieModal
         visible={adding}
-        cycles={cycles}
-        cyclesFailed={cyclesFailed}
         onClose={() => setAdding(false)}
-        onSave={async ({ cycle, ...data }) => {
-          // /cycles ne donne pas l'id numérique attendu par cycle_id : on le reprend d'une
-          // série du même cycle s'il y en a une, sinon on envoie la public_key
-          const known = series.find((s) => s.cycle_public_key === cycle);
-          const message = await createSerie({
-            ...data,
-            cycle_id: known?.cycle_id ?? cycle,
-          });
+        onSave={async (data) => {
+          const message = await createSerie(data);
           setAdding(false);
           load("refreshing");
           showToast(message);

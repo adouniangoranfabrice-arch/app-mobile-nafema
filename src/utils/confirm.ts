@@ -1,7 +1,7 @@
 import { Annee } from "@/api/annees";
 import { Cycle } from "@/api/cycles";
 import { Periode } from "@/api/periodes";
-import { Drena, Iepp } from "@/data/drenas";
+import { Drena } from "@/data/drenas";
 import { Student, fullName } from "@/data/students";
 import { Alert } from "react-native";
 
@@ -72,13 +72,28 @@ export function confirmDeleteDrena(drena: Drena, onConfirm: () => void) {
   );
 }
 
-export function confirmDeleteIepp(iepp: Iepp, onConfirm: () => void) {
+export function confirmDeleteIepp(
+  iepp: { slug: string; name: string },
+  onConfirm: () => void,
+) {
   Alert.alert(
     "Supprimer cette IEPP ?",
-    `${iepp.code ? `${iepp.code} · ` : ""}${iepp.name}\n\nCette action est irréversible.`,
+    `${iepp.slug ? `${iepp.slug} · ` : ""}${iepp.name}\n\nCette action est irréversible.`,
     [
       { text: "Annuler", style: "cancel" },
       { text: "Supprimer", style: "destructive", onPress: onConfirm },
     ],
   );
+}
+
+/** Confirmation de suppression générique : titre, élément concerné, puis action */
+export function confirmDelete(
+  title: string,
+  label: string,
+  onConfirm: () => void,
+) {
+  Alert.alert(title, `${label}\n\nCette action est irréversible.`, [
+    { text: "Annuler", style: "cancel" },
+    { text: "Supprimer", style: "destructive", onPress: onConfirm },
+  ]);
 }

@@ -45,12 +45,33 @@ export function apiErrorMessage(error: unknown): string {
     if (!error.response)
       return "Impossible de joindre le serveur. Vérifiez votre connexion.";
     const { status, data } = error.response;
+    // En développement : ce qui a été envoyé et ce que le serveur a répondu, pour comprendre l'échec
+    if (__DEV__) {
+      console.log(
+        "Échec API",
+        JSON.stringify({
+          requete: `${error.config?.method?.toUpperCase()} ${error.config?.url}`,
+          statut: status,
+          envoye: (() => {
+            try {
+              return JSON.parse(error.config?.data ?? "null");
+            } catch {
+              return error.config?.data ?? null;
+            }
+          })(),
+          reponse: data,
+        }),
+      );
+    }
     if (status < 500) {
       // Erreurs de validation : { message, errors: { champ: ["…"] } }
       const details = Object.values(data?.errors ?? {}).flat();
       if (details.length > 0) return details.join("\n");
       if (typeof data?.message === "string") return data.message;
     }
+    // 500 : le serveur a planté en traitant la demande (le problème est côté serveur)
+    if (status >= 500)
+      return `Erreur du serveur (${status}). Veuillez réessayer ou contacter l'administrateur.`;
   }
   return "Une erreur est survenue. Veuillez réessayer.";
 }

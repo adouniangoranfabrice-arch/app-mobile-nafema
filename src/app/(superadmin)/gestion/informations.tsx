@@ -1,3 +1,4 @@
+import { SkeletonInfo } from "@/components/ui/Skeleton";
 import { getMe, User } from "@/api/auth";
 import { Stagger } from "@/components/ui/MotionView";
 import FixedHeader from "@/components/ui/FixedHeader";
@@ -9,7 +10,6 @@ import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { ReactNode, useEffect, useState } from "react";
 import {
-  ActivityIndicator,
   Pressable,
   ScrollView,
   Text,
@@ -211,9 +211,7 @@ export default function Informations() {
               </Pressable>
             </View>
           ) : (
-            <View className="items-center rounded-3xl bg-white py-12">
-              <ActivityIndicator color="#2B5EA8" />
-            </View>
+            <SkeletonInfo rows={6} />
           )}
         </View>
       </ScrollView>

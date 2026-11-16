@@ -1,7 +1,15 @@
 import { Stagger } from "@/components/ui/MotionView";
+import {
+  ABONNEMENTS,
+  abonnementActif,
+  CREANCES,
+  enRetard,
+  PAIEMENTS,
+  PLANS,
+  reste,
+} from "@/data/finances";
 import FixedHeader from "@/components/ui/FixedHeader";
 import { useCompetences } from "@/context/CompetencesContext";
-import { useDrenas } from "@/context/DrenasContext";
 import { useEvaluations } from "@/context/EvaluationsContext";
 import { usePedagogie } from "@/context/PedagogieContext";
 import { useStudents } from "@/context/StudentsContext";
@@ -62,9 +70,10 @@ export default function gestion() {
             {canOpen("periodes") && <AcademicManagement />}
             <SchoolingManagement />
             {canOpen("familles") && <FamilyManagement />}
-            {canOpen("drenas") && <DrenasManagement />}
+            {(canOpen("drenas") || canOpen("iepps")) && <DrenasManagement />}
             {ENTITY_KEYS.some(canUse) && <OrganisationManagement />}
             {canOpen("evaluations") && <PedagogyManagement />}
+            {canOpen("finances") && <FinanceManagement />}
             {canOpen("absences") && <SchoolLifeManagement />}
             {canUse("personnels") && <AdministrationManagement />}
 
@@ -333,30 +342,106 @@ function SchoolingManagement() {
   );
 }
 
+/* ---------- Cadre « Finances & abonnements » (données fictives) ---------- */
+
+function FinanceManagement() {
+  const router = useRouter();
+  const { href, school } = useGestion();
+  const mine = <T extends { school: string }>(list: T[]) =>
+    list.filter((x) => !school || x.school === school);
+
+  const paiements = mine(PAIEMENTS);
+  const creances = mine(CREANCES).filter((c) => reste(c) > 0);
+  const retard = creances.filter((c) => enRetard(c));
+  const abonnements = mine(ABONNEMENTS);
+  const actifs = abonnements.filter((a) => abonnementActif(a));
+
+  return (
+    <AccordionCard
+      icon="cash-outline"
+      title="Finances & abonnements"
+      subtitle="Frais, paiements, créances, plans, abonnements"
+    >
+      <LinkRow
+        icon="cash-outline"
+        title="Frais"
+        summary="Liste des frais"
+        onPress={() => router.push(href("frais"))}
+      />
+      <LinkRow
+        icon="card-outline"
+        title="Paiements"
+        summary={`${paiements.length} paiement${plural(paiements.length)}`}
+        onPress={() => router.push(href("paiements"))}
+      />
+      <ExpandRow
+        icon="wallet-outline"
+        title="Créances"
+        summary={`${creances.length} en cours · ${retard.length} en retard`}
+      >
+        <SubLink
+          title="Toutes les créances"
+          onPress={() => router.push(href("creances"))}
+        />
+        <SubLink
+          title="Créances en retard"
+          onPress={() => router.push(href("creances", { filtre: "retard" }))}
+        />
+      </ExpandRow>
+      <LinkRow
+        icon="clipboard-outline"
+        title="Plans"
+        summary={`${PLANS.length} plans`}
+        onPress={() => router.push(href("plans"))}
+      />
+      <ExpandRow
+        icon="repeat-outline"
+        title="Abonnements"
+        summary={`${actifs.length} actif${plural(actifs.length)} · ${abonnements.length - actifs.length} expiré${plural(abonnements.length - actifs.length)}`}
+      >
+        <SubLink
+          title="Abonnements actifs"
+          onPress={() => router.push(href("abonnements"))}
+        />
+        <SubLink
+          title="Abonnements expirés"
+          onPress={() =>
+            router.push(href("abonnements", { filtre: "expires" }))
+          }
+        />
+      </ExpandRow>
+    </AccordionCard>
+  );
+}
+
 /* ---------- Cadre « gestion DREN & IEPP » ---------- */
 
 function DrenasManagement() {
   const router = useRouter();
-  const { iepps } = useDrenas();
+  const { canOpen, href } = useGestion();
 
   return (
     <AccordionCard
       icon="map-outline"
       title="gestion DREN & IEPP"
-      subtitle={`DRENA · ${iepps.length} IEPP`}
+      subtitle={canOpen("drenas") ? "DRENA · IEPP" : "IEPP"}
     >
-      <LinkRow
-        icon="map-outline"
-        title="DRENs"
-        summary="Liste des DRENA"
-        onPress={() => router.push("/(superadmin)/gestion/drenas")}
-      />
-      <LinkRow
-        icon="business-outline"
-        title="IEPPs"
-        summary={`${iepps.length} IEPP enregistrée${plural(iepps.length)}`}
-        onPress={() => router.push("/(superadmin)/gestion/iepps")}
-      />
+      {canOpen("drenas") && (
+        <LinkRow
+          icon="map-outline"
+          title="DRENs"
+          summary="Liste des DRENA"
+          onPress={() => router.push(href("drenas"))}
+        />
+      )}
+      {canOpen("iepps") && (
+        <LinkRow
+          icon="business-outline"
+          title="IEPPs"
+          summary="Liste des IEPP"
+          onPress={() => router.push(href("iepps"))}
+        />
+      )}
     </AccordionCard>
   );
 }
@@ -366,7 +451,7 @@ function DrenasManagement() {
 function OrganisationManagement() {
   const router = useRouter();
   const { records } = useOrganisation();
-  const { canUse, href } = useGestion();
+  const { canOpen, canUse, href } = useGestion();
   const keys = ENTITY_KEYS.filter(canUse);
 
   return (
@@ -382,7 +467,9 @@ function OrganisationManagement() {
           key === "cycles" ||
           key === "niveaux" ||
           key === "series" ||
-          key === "salles"
+          key === "salles" ||
+          // côté admin école, les classes viennent aussi de l'API
+          (key === "classes" && canOpen("classes-api"))
         ) {
           return (
             <LinkRow

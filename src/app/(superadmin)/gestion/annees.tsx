@@ -1,3 +1,4 @@
+import { SkeletonList } from "@/components/ui/Skeleton";
 import {
   Annee,
   ANNEE_STATUS,
@@ -220,9 +221,13 @@ export default function Annees() {
               </View>
             </View>
           ) : loading || status === "loadingMore" ? (
-            <View className="items-center py-4">
-              <ActivityIndicator color="#2B5EA8" />
-            </View>
+            visible.length === 0 ? (
+              <SkeletonList />
+            ) : (
+              <View className="items-center py-4">
+                <ActivityIndicator color="#2B5EA8" />
+              </View>
+            )
           ) : undefined
         }
       />

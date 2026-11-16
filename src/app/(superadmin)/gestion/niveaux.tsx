@@ -1,3 +1,4 @@
+import { SkeletonList } from "@/components/ui/Skeleton";
 import { Cycle, getCycles } from "@/api/cycles";
 import { createNiveau, getNiveaux, Niveau } from "@/api/niveaux";
 import AddNiveauModal from "@/components/gestion/AddNiveauModal";
@@ -277,9 +278,13 @@ export default function Niveaux() {
               </View>
             </View>
           ) : loading ? (
-            <View className="items-center py-4">
-              <ActivityIndicator color="#2B5EA8" />
-            </View>
+            shown.length === 0 ? (
+              <SkeletonList />
+            ) : (
+              <View className="items-center py-4">
+                <ActivityIndicator color="#2B5EA8" />
+              </View>
+            )
           ) : undefined
         }
       />

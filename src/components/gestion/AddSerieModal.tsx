@@ -1,25 +1,15 @@
 import { apiErrorMessage } from "@/api/client";
-import { Cycle } from "@/api/cycles";
+import { SerieInput } from "@/api/series";
 import { FormSheet, SheetModal } from "@/components/ui/FormSheet";
 import Input from "@/components/ui/Input";
-import Select from "@/components/ui/Select";
 import { showToast } from "@/components/ui/Toast";
 import { useState } from "react";
 import { Text } from "react-native";
 
-type SerieData = {
-  cycle: string; // public_key du cycle
-  code: string;
-  libelle: string;
-  type?: string;
-};
-
 type Props = {
   visible: boolean;
-  cycles: Cycle[];
-  cyclesFailed: boolean;
   onClose: () => void;
-  onSave: (serie: SerieData) => Promise<void>;
+  onSave: (serie: SerieInput) => Promise<void>;
 };
 
 export default function AddSerieModal({ visible, ...props }: Props) {
@@ -30,18 +20,12 @@ export default function AddSerieModal({ visible, ...props }: Props) {
   );
 }
 
-type Errors = Partial<Record<"cycle" | "code" | "libelle", string>>;
+type Errors = Partial<Record<keyof SerieInput, string>>;
 
-function SerieForm({
-  cycles,
-  cyclesFailed,
-  onClose,
-  onSave,
-}: Omit<Props, "visible">) {
-  const [cycle, setCycle] = useState("");
-  const [code, setCode] = useState("");
-  const [libelle, setLibelle] = useState("");
-  const [type, setType] = useState("");
+function SerieForm({ onClose, onSave }: Omit<Props, "visible">) {
+  const [slug, setSlug] = useState("");
+  const [name, setName] = useState("");
+  const [typeSerie, setTypeSerie] = useState("");
   const [errors, setErrors] = useState<Errors>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
@@ -50,7 +34,7 @@ function SerieForm({
   const clear = (key: keyof Errors) =>
     setErrors((e) => ({ ...e, [key]: undefined }));
 
-  const save = async (data: SerieData) => {
+  const save = async (data: SerieInput) => {
     setSaving(true);
     setSaveError("");
     try {
@@ -67,18 +51,17 @@ function SerieForm({
     if (saving) return;
     const next: Errors = {};
 
-    if (!cycle) next.cycle = "Choisis un cycle";
-    if (!code.trim()) next.code = "Le code est obligatoire";
-    if (!libelle.trim()) next.libelle = "Le libellé est obligatoire";
+    if (!slug.trim()) next.slug = "Le code est obligatoire";
+    if (!name.trim()) next.name = "Le libellé est obligatoire";
+    if (!typeSerie.trim()) next.type_serie = "Le type de série est obligatoire";
 
     setErrors(next);
     if (Object.keys(next).length > 0) return false;
 
     save({
-      cycle,
-      code: code.trim(),
-      libelle: libelle.trim(),
-      type: type.trim() || undefined,
+      slug: slug.trim(),
+      name: name.trim(),
+      type_serie: typeSerie.trim(),
     });
     return true;
   };
@@ -92,54 +75,42 @@ function SerieForm({
       onClose={onClose}
       onSubmit={submit}
     >
-      <Select
-        label="Cycle"
-        icon="sync-outline"
-        placeholder="Sélectionner un cycle"
-        value={cycle}
-        options={cycles.map((c) => ({ value: c.public_key, label: c.name }))}
-        onChange={(v) => {
-          setCycle(v);
-          clear("cycle");
-        }}
-        error={
-          errors.cycle ??
-          (cyclesFailed ? "Impossible de charger les cycles." : undefined)
-        }
-      />
-
       <Input
         label="Code"
         icon="barcode-outline"
         placeholder="Ex. TLE-D"
-        value={code}
+        value={slug}
         onChangeText={(t) => {
-          setCode(t.toUpperCase());
-          clear("code");
+          setSlug(t.toUpperCase());
+          clear("slug");
         }}
         autoCapitalize="characters"
         autoCorrect={false}
-        error={errors.code}
+        error={errors.slug}
       />
 
       <Input
         label="Libellé"
         icon="text-outline"
         placeholder="Ex. Terminale D"
-        value={libelle}
+        value={name}
         onChangeText={(t) => {
-          setLibelle(t);
-          clear("libelle");
+          setName(t);
+          clear("name");
         }}
-        error={errors.libelle}
+        error={errors.name}
       />
 
       <Input
-        label="Type"
+        label="Type de série"
         icon="pricetag-outline"
-        placeholder="Facultatif"
-        value={type}
-        onChangeText={setType}
+        placeholder="Ex. Scientifique"
+        value={typeSerie}
+        onChangeText={(t) => {
+          setTypeSerie(t);
+          clear("type_serie");
+        }}
+        error={errors.type_serie}
       />
 
       {saveError ? (
