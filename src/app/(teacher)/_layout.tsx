@@ -50,6 +50,7 @@ export default function TeacherLayout() {
         <Tabs.Screen
           name="classes"
           options={{
+            popToTopOnBlur: true, // en revenant sur l'onglet : sa page principale
             title: "Classes",
             tabBarIcon: icon("people-outline", "people"),
           }}
@@ -71,6 +72,7 @@ export default function TeacherLayout() {
         <Tabs.Screen
           name="gestion"
           options={{
+            popToTopOnBlur: true, // en revenant sur l'onglet : sa page principale
             title: "Gestion",
             tabBarIcon: icon("settings-outline", "settings"),
           }}

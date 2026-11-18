@@ -328,7 +328,7 @@ function SchoolingManagement() {
         <LinkRow
           icon="create-outline"
           title="Inscriptions"
-          summary="Bientôt disponible"
+          summary="Liste des inscriptions et nouvelle inscription"
           onPress={() => router.push(href("inscriptions"))}
         />
       )}

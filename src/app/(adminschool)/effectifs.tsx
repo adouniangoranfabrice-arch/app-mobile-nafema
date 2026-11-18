@@ -9,7 +9,8 @@ import { useOrganisation } from "@/organisation/OrganisationContext";
 import { computeEffectifs } from "@/organisation/stats";
 import { initials } from "@/utils/text";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+
+import { useGo } from "@/hooks/use-go";
 import { StatusBar } from "expo-status-bar";
 import { useState } from "react";
 import { LayoutAnimation, Pressable, ScrollView, Text, View } from "react-native";
@@ -22,7 +23,7 @@ const percent = (part: number, total: number) =>
   total > 0 ? Math.round((part / total) * 100) : 0;
 
 export default function Effectifs() {
-  const router = useRouter();
+  const go = useGo(); // ouvre aussi les écrans d'un autre onglet, avec sa page principale dessous
   const { href } = useGestion();
   const { students } = useStudents();
   const { years } = useAcademic();
@@ -42,7 +43,7 @@ export default function Effectifs() {
   };
 
   const openStudent = (s: Student) =>
-    router.push(href("eleves-detail", { id: s.id }));
+    go(href("eleves-detail", { id: s.id }));
 
   return (
     <View className="flex-1 bg-page">

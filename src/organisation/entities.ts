@@ -41,6 +41,7 @@ const etablissements: EntityConfig = {
       options: [
         { value: "PUBLIC", label: "Public" },
         { value: "PRIVE", label: "Privé" },
+        { value: "SEMI PRIVE", label: "Sémi Privé" },
       ],
       icon: "ribbon-outline",
       section: "Identité",

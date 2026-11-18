@@ -1,1 +1,1 @@
-export { default } from "@/app/(superadmin)/gestion/_layout";
+export { default, unstable_settings } from "@/app/(superadmin)/gestion/_layout";

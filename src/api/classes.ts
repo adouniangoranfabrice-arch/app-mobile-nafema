@@ -18,6 +18,8 @@ export type Classe = {
   serie_key: string;
   salle_key: string;
   etab_name: string;
+  /** public_key de l'établissement de la classe ("" si la liste ne le donne pas) */
+  etab_key: string;
   /** Dates brutes de l'API ("" si absentes) */
   created_at: string;
   updated_at: string;
@@ -55,6 +57,8 @@ type RawClasse = {
   salle_public_key?: string;
   etablissement?: Ref;
   etab_name?: string;
+  etablissement_public_key?: string;
+  etab_public_key?: string;
   created_at?: string | null;
   updated_at?: string | null;
   cree_le?: string | null;
@@ -87,6 +91,8 @@ function toClasse(c: RawClasse): Classe {
     serie_key: c.serie_public_key ?? refKey(c.serie),
     salle_key: c.salle_public_key ?? refKey(c.salle),
     etab_name: c.etab_name ?? refName(c.etablissement),
+    etab_key:
+      c.etablissement_public_key ?? c.etab_public_key ?? refKey(c.etablissement),
     created_at: c.created_at ?? c.cree_le ?? "",
     updated_at: c.updated_at ?? c.modifiee_le ?? c.modifie_le ?? "",
   };

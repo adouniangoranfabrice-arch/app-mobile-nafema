@@ -7,6 +7,7 @@ import {
   takeClassesStale,
   updateClasse,
 } from "@/api/classes";
+import { getMe } from "@/api/auth";
 import { apiErrorMessage } from "@/api/client";
 import { SkeletonList } from "@/components/ui/Skeleton";
 import AddClasseModal from "@/components/gestion/AddClasseModal";
@@ -18,9 +19,10 @@ import { useGestion } from "@/hooks/use-gestion";
 import { IconButton } from "@/organisation/ui";
 import { confirmDelete } from "@/utils/confirm";
 import { formatDateTime } from "@/utils/dates";
+import { ofSchool } from "@/utils/school";
 import { normalize } from "@/utils/text";
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useRouter } from "expo-router";
+import { Href, useFocusEffect, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -35,12 +37,25 @@ const PAGE_SIZE = 20;
 
 const plural = (n: number) => (n > 1 ? "s" : "");
 
+/** Écran Classes de la Gestion (super admin, admin école) */
 export default function Classes() {
+  return <ClassesScreen />;
+}
+
+/** L'établissement du compte connecté, pour l'onglet Classes de l'admin école */
+type School = { key: string; name: string };
+
+/**
+ * Liste des classes. asTab : onglet Classes de l'admin école (pas de bouton retour,
+ * seulement les classes de l'établissement du compte, détail dans la pile de l'onglet).
+ */
+export function ClassesScreen({ asTab = false }: { asTab?: boolean }) {
   const router = useRouter();
   const { canEdit, href } = useGestion();
   const listRef = useRef<FlatList<Classe>>(null);
   const lastRequest = useRef(0);
 
+  const [school, setSchool] = useState<School | null>(null);
   const [classes, setClasses] = useState<Classe[]>([]);
   const [status, setStatus] = useState<
     "loading" | "refreshing" | "idle" | "failed"
@@ -54,14 +69,21 @@ export default function Classes() {
     const request = ++lastRequest.current;
     setStatus(next);
     try {
-      const all = await getClasses();
+      // Onglet admin école : l'établissement du compte (GET /me) en même temps que les classes
+      const [all, me] = await Promise.all([
+        getClasses(),
+        asTab ? getMe().catch(() => null) : Promise.resolve(null),
+      ]);
       if (request !== lastRequest.current) return; // une requête plus récente a pris le relais
-      setClasses(all);
+      const etab = me?.etablissement;
+      const mine = etab ? { key: etab.public_key, name: etab.name } : null;
+      setSchool(mine);
+      setClasses(etab ? ofSchool(all, etab) : all);
       setStatus("idle");
     } catch {
       if (request === lastRequest.current) setStatus("failed");
     }
-  }, []);
+  }, [asTab]);
 
   useEffect(() => {
     load("loading");
@@ -93,9 +115,15 @@ export default function Classes() {
       }
     });
 
+  // Dans l'onglet, le détail s'ouvre dans la pile de l'onglet : le retour revient à cette liste
+  const detailHref = (params: Record<string, string>) =>
+    asTab
+      ? ({ pathname: "/(adminschool)/classes/classe-detail", params } as Href)
+      : href("classe-detail", params);
+
   const openDetail = (c: Classe) =>
     router.push(
-      href("classe-detail", {
+      detailHref({
         public_key: c.public_key,
         name: c.name,
         max_effectif: c.max_effectif === null ? "" : String(c.max_effectif),
@@ -135,9 +163,10 @@ export default function Classes() {
   const loading = status === "loading";
   const failed = status === "failed";
 
-  const summary = loading
+  const count = loading
     ? "Chargement…"
     : `${visible.length} classe${plural(visible.length)}`;
+  const summary = asTab && school ? `${school.name} · ${count}` : count;
 
   return (
     <View className="flex-1 bg-page">
@@ -145,18 +174,26 @@ export default function Classes() {
 
       <FixedHeader>
         <View className="flex-row items-center gap-3">
-          <Pressable
-            onPress={() => router.back()}
-            hitSlop={8}
-            className="h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm active:opacity-80"
-          >
-            <Ionicons name="chevron-back" size={22} color="#2B5EA8" />
-          </Pressable>
+          {!asTab && (
+            <Pressable
+              onPress={() => router.back()}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Retour"
+              className="h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm active:opacity-80"
+            >
+              <Ionicons name="chevron-back" size={22} color="#2B5EA8" />
+            </Pressable>
+          )}
           <View className="flex-1">
-            <Text className="font-inter-bold text-[20px] leading-8 text-ink">
+            <Text
+              className={`font-inter-bold text-ink ${asTab ? "text-[28px] leading-9" : "text-[20px] leading-8"}`}
+            >
               Classes
             </Text>
-            <Text className="font-inter text-[13px] text-muted">{summary}</Text>
+            <Text numberOfLines={1} className="font-inter text-[13px] text-muted">
+              {summary}
+            </Text>
           </View>
         </View>
 

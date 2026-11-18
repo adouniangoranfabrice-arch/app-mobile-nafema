@@ -1,10 +1,11 @@
 import { Skeleton } from "@/components/ui/Skeleton";
 import { getMe, User } from "@/api/auth";
+import { useGo } from "@/hooks/use-go";
 import { useLogout } from "@/hooks/use-logout";
 import { useTeacherClasses } from "@/hooks/use-teacher-classes";
 import { initials } from "@/utils/text";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { Href, useRouter } from "expo-router";
+import { Href } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { ReactNode, useEffect, useState } from "react";
 import { Image, Pressable, ScrollView, Text, View } from "react-native";
@@ -132,7 +133,7 @@ const QUICK_ACTIONS: { id: string; label: string; icon: IconName }[] = [
 export default function TeacherHome() {
   const signOut = useLogout();
   const insets = useSafeAreaInsets();
-  const router = useRouter();
+  const go = useGo(); // ouvre aussi les écrans d'un autre onglet, avec sa page principale dessous
   const teacherClasses = useTeacherClasses();
   const [selectedId, setSelectedId] = useState("");
   const [user, setUser] = useState<User | null>(null);
@@ -365,7 +366,7 @@ export default function TeacherHome() {
             {selected && (
               <Pressable
                 onPress={() =>
-                  router.push({
+                  go({
                     pathname: "/(teacher)/classes/eleves",
                     params: { classe: selected.id },
                   } as Href)

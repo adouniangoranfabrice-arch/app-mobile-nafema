@@ -79,6 +79,7 @@ export default function PlatformLayout() {
               <Tabs.Screen
                 name="gestion"
                 options={{
+                  popToTopOnBlur: true, // en revenant sur l'onglet : sa page principale
                   title: "Gestion",
                   tabBarIcon: icon("menu-outline", "menu"),
                 }}

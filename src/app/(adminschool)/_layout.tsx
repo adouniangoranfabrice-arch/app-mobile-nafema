@@ -54,6 +54,7 @@ export default function AdminLayout() {
         <Tabs.Screen
           name="classes"
           options={{
+            popToTopOnBlur: true, // en revenant sur l'onglet : sa page d'accueil
             title: "Classes",
             tabBarIcon: icon("business-outline", "business"),
           }}
@@ -61,6 +62,7 @@ export default function AdminLayout() {
         <Tabs.Screen
           name="gestion"
           options={{
+            popToTopOnBlur: true, // en revenant sur l'onglet : sa page d'accueil
             title: "Gestion",
             tabBarIcon: icon("settings-outline", "settings"),
           }}
