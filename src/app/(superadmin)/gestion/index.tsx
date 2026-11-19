@@ -74,7 +74,7 @@ export default function gestion() {
             {ENTITY_KEYS.some(canUse) && <OrganisationManagement />}
             {canOpen("evaluations") && <PedagogyManagement />}
             {canOpen("finances") && <FinanceManagement />}
-            {canOpen("absences") && <SchoolLifeManagement />}
+            {(canOpen("echeances") || canOpen("absences")) && <SchoolLifeManagement />}
             {canUse("personnels") && <AdministrationManagement />}
 
             <Pressable
@@ -261,21 +261,31 @@ function FamilyManagement() {
 
 function SchoolLifeManagement() {
   const router = useRouter();
-  const { href } = useGestion();
-  const summary = `${ABSENCES.length} absence${plural(ABSENCES.length)}`;
+  const { href, canOpen } = useGestion();
+  const absences = `${ABSENCES.length} absence${plural(ABSENCES.length)}`;
+  const subtitle = [canOpen("echeances") && "Échéances", canOpen("absences") && "Absences"]
+    .filter(Boolean)
+    .join(", ");
 
+  // Une ligne par rubrique, comme Finances & abonnements
   return (
-    <AccordionCard
-      icon="calendar-outline"
-      title="Vie scolaire"
-      subtitle={summary}
-    >
-      <ExpandRow icon="calendar-outline" title="Absences" summary={summary}>
-        <SubLink
-          title="Liste des absences"
+    <AccordionCard icon="calendar-outline" title="Vie scolaire" subtitle={subtitle}>
+      {canOpen("echeances") && (
+        <LinkRow
+          icon="hourglass-outline"
+          title="Échéances"
+          summary="Liste des échéances"
+          onPress={() => router.push(href("echeances"))}
+        />
+      )}
+      {canOpen("absences") && (
+        <LinkRow
+          icon="calendar-outline"
+          title="Absences"
+          summary={absences}
           onPress={() => router.push(href("absences"))}
         />
-      </ExpandRow>
+      )}
     </AccordionCard>
   );
 }

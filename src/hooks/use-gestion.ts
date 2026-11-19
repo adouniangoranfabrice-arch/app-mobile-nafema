@@ -17,6 +17,7 @@ const ACCESS = {
       "iepps",
       "classes-api",
       "finances",
+      "echeances",
       "annees",
       "periodes",
       "inscriptions",
@@ -26,6 +27,7 @@ const ACCESS = {
       "familles",
       "suppression-periodes",
       "suppression-frais", // seul le super admin supprime un frais
+      "suppression-echeances", // seul le super admin supprime une échéance
       "attribution",
       "suivi-modules",
     ],
@@ -57,6 +59,7 @@ const ACCESS = {
       "iepps",
       "drenas",
       "finances",
+      "echeances",
     ],
     entities: [
       "niveaux",
