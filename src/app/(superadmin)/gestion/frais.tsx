@@ -234,7 +234,9 @@ export default function FraisScreen() {
                   numberOfLines={1}
                   className="mt-0.5 font-inter text-xs text-muted"
                 >
-                  {[item.niveau_name, item.annee_name].filter(Boolean).join(" · ") || "—"}
+                  {[item.niveau_name || "Tous les niveaux", item.annee_name]
+                    .filter(Boolean)
+                    .join(" · ")}
                 </Text>
                 {!!item.type_frais && (
                   <View className="mt-1.5 self-start">

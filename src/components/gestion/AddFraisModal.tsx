@@ -1,4 +1,3 @@
-import { anneeStatus, getAllAnnees } from "@/api/annees";
 import { apiErrorMessage } from "@/api/client";
 import {
   FraisDetail,
@@ -34,14 +33,17 @@ export default function AddFraisModal({ visible, frais, ...props }: Props) {
 
 type Errors = Partial<Record<keyof FraisInput, string>>;
 
+/** Valeur de « Tous les niveaux » dans la liste : envoyée à null */
+const ALL_LEVELS = "";
+
 function FraisForm({
   frais,
   onClose,
   onSave,
 }: Omit<Props, "visible" | "frais"> & { frais: FraisDetail | null }) {
   const isEdit = !!frais;
-  const [annee, setAnnee] = useState(frais?.annee_public_key ?? "");
-  const [niveau, setNiveau] = useState(frais?.niveau_public_key ?? "");
+  // "" : tous les niveaux (envoyé à null)
+  const [niveau, setNiveau] = useState(frais?.niveau_public_key ?? ALL_LEVELS);
   const [type, setType] = useState(frais?.type_frais || "SCOLARITE");
   const [name, setName] = useState(frais?.name ?? "");
   const [montant, setMontant] = useState(
@@ -53,39 +55,24 @@ function FraisForm({
   );
   const [affectation, setAffectation] = useState(frais?.affectation ?? "");
   const [required, setRequired] = useState(frais?.is_required ?? false);
+  const [tranchable, setTranchable] = useState(frais?.tranchable ?? false);
   const [errors, setErrors] = useState<Errors>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
 
-  // Années et niveaux viennent de la base, chargés à l'ouverture du formulaire
-  const [annees, setAnnees] = useState<Option[] | null>(null);
+  // Niveaux de la base, chargés à l'ouverture ; « Tous les niveaux » en tête
   const [niveaux, setNiveaux] = useState<Option[] | null>(null);
-  const [anneesFailed, setAnneesFailed] = useState(false);
   const [niveauxFailed, setNiveauxFailed] = useState(false);
 
   useEffect(() => {
     let active = true;
-    getAllAnnees()
-      .then((all) => {
-        if (!active) return;
-        setAnnees(
-          all.map((a) => ({
-            value: a.public_key,
-            label: anneeStatus(a) === "active" ? `${a.name} (en cours)` : a.name,
-          })),
-        );
-        // L'année en cours est proposée d'office
-        const current = all.find((a) => anneeStatus(a) === "active");
-        if (current) setAnnee((v) => v || current.public_key);
-      })
-      .catch(() => {
-        if (!active) return;
-        setAnnees([]);
-        setAnneesFailed(true);
-      });
     getNiveaux()
       .then((all) => {
-        if (active) setNiveaux(all.map((n) => ({ value: n.public_key, label: n.name })));
+        if (active)
+          setNiveaux([
+            { value: ALL_LEVELS, label: "Tous les niveaux" },
+            ...all.map((n) => ({ value: n.public_key, label: n.name })),
+          ]);
       })
       .catch(() => {
         if (!active) return;
@@ -119,8 +106,6 @@ function FraisForm({
     const next: Errors = {};
     const m = montant.replace(/\s/g, "");
 
-    if (!annee) next.annee = "Choisissez une année scolaire";
-    if (!niveau) next.niveau = "Choisissez un niveau";
     if (!type) next.type_frais = "Choisissez un type";
     if (!name.trim()) next.name = "Le libellé est obligatoire";
     if (!m) next.montant_frais = "Le montant est obligatoire";
@@ -131,13 +116,13 @@ function FraisForm({
     if (Object.keys(next).length > 0) return false;
 
     save({
-      annee,
-      niveau,
+      niveau: niveau || null, // tous les niveaux
       name: name.trim(),
       type_frais: type,
       montant_frais: Number(m),
       affectation: affectation.trim() || null,
       is_required: required,
+      tranchable,
       // Format du modèle de l'API : « 2027-01-31T00:00:00Z » (minuit, sans décalage de fuseau)
       validite: validite ? `${toISO(validite)}T00:00:00Z` : null,
     });
@@ -154,25 +139,9 @@ function FraisForm({
       onSubmit={submit}
     >
       <Select
-        label="Année scolaire *"
-        icon="calendar-outline"
-        placeholder={annees ? "Sélectionner une année" : "Chargement…"}
-        value={annee}
-        options={annees ?? []}
-        onChange={(v) => {
-          setAnnee(v);
-          clear("annee");
-        }}
-        error={
-          errors.annee ??
-          (anneesFailed ? "Impossible de charger les années." : undefined)
-        }
-      />
-
-      <Select
         label="Niveau *"
         icon="layers-outline"
-        placeholder={niveaux ? "Sélectionner un niveau" : "Chargement…"}
+        placeholder={niveaux ? "Tous les niveaux" : "Chargement…"}
         value={niveau}
         options={niveaux ?? []}
         searchable
@@ -253,6 +222,13 @@ function FraisForm({
         onToggle={() => setRequired((r) => !r)}
         title="Obligatoire"
         description="Ce frais doit être payé par tous les élèves du niveau"
+      />
+
+      <CheckboxRow
+        checked={tranchable}
+        onToggle={() => setTranchable((t) => !t)}
+        title="Fractionnable (tranches)"
+        description="Ce frais peut être payé en plusieurs fois"
       />
 
       {saveError ? (

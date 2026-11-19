@@ -4,6 +4,7 @@ import {
   createClasse,
   deleteClasse,
   getClasses,
+  classeStatus,
   takeClassesStale,
   updateClasse,
 } from "@/api/classes";
@@ -16,9 +17,7 @@ import PageBar from "@/components/ui/PageBar";
 import SearchBar from "@/components/ui/SearchBar";
 import { showToast } from "@/components/ui/Toast";
 import { useGestion } from "@/hooks/use-gestion";
-import { IconButton } from "@/organisation/ui";
 import { confirmDelete } from "@/utils/confirm";
-import { formatDateTime } from "@/utils/dates";
 import { ofSchool } from "@/utils/school";
 import { normalize } from "@/utils/text";
 import { Ionicons } from "@expo/vector-icons";
@@ -127,6 +126,11 @@ export function ClassesScreen({ asTab = false }: { asTab?: boolean }) {
         public_key: c.public_key,
         name: c.name,
         max_effectif: c.max_effectif === null ? "" : String(c.max_effectif),
+        min_effectif: c.min_effectif === null ? "" : String(c.min_effectif),
+        lang_v2: c.lang_v2,
+        total_effectif: c.total_effectif === null ? "" : String(c.total_effectif),
+        effectif_actuel: c.effectif_actuel === null ? "" : String(c.effectif_actuel),
+        status: c.status,
         annee_name: c.annee_name,
         niveau_name: c.niveau_name,
         serie_name: c.serie_name,
@@ -147,7 +151,7 @@ export function ClassesScreen({ asTab = false }: { asTab?: boolean }) {
     (c) =>
       !q ||
       normalize(
-        `${c.name} ${c.niveau_name} ${c.serie_name} ${c.salle_name} ${c.annee_name}`,
+        `${c.name} ${c.niveau_name} ${c.niveau_slug} ${c.serie_name} ${c.salle_name} ${c.annee_name} ${classeStatus(c.status)?.label ?? ""}`,
       ).includes(q),
   );
 
@@ -230,78 +234,85 @@ export function ClassesScreen({ asTab = false }: { asTab?: boolean }) {
         showsVerticalScrollIndicator={false}
         refreshing={status === "refreshing"}
         onRefresh={() => load("refreshing")}
-        renderItem={({ item }) => (
-          <View className="w-full max-w-[640px] self-center px-5 pb-3">
-            <View className="flex-row items-center gap-3 rounded-3xl bg-white p-4 shadow-sm">
-              <Pressable
-                onPress={() => openDetail(item)}
-                accessibilityRole="button"
-                accessibilityLabel={item.name}
-                className="flex-1 active:opacity-70"
-              >
-                <Text
-                  numberOfLines={2}
-                  className="font-inter-semibold text-[15px] text-ink"
-                >
-                  {item.name}
-                </Text>
-                <Text className="mt-0.5 font-inter text-xs text-muted">
-                  {[item.niveau_name, item.serie_name, item.salle_name]
-                    .filter(Boolean)
-                    .join(" · ") || "—"}
-                  {item.max_effectif !== null ? ` · ${item.max_effectif} élèves max` : ""}
-                </Text>
-                {/* Année scolaire de la classe */}
-                <View className="mt-1 flex-row items-center gap-1">
-                  <Ionicons name="calendar-outline" size={12} color="#2B5EA8" />
-                  <Text
-                    numberOfLines={1}
-                    className="font-inter-semibold text-xs text-primary"
-                  >
-                    {item.annee_name ? `Année ${item.annee_name}` : "Année non renseignée"}
-                  </Text>
-                </View>
-                {!!item.created_at && (
-                  <Text
-                    numberOfLines={1}
-                    className="mt-0.5 font-inter text-[11px] text-muted"
-                  >
-                    Créée le {formatDateTime(item.created_at)}
-                    {item.updated_at && item.updated_at !== item.created_at
-                      ? ` · modifiée le ${formatDateTime(item.updated_at)}`
-                      : ""}
-                  </Text>
-                )}
-              </Pressable>
-
-              {/* Actions : voir, modifier, supprimer */}
-              <View className="flex-row items-center gap-1.5">
-                <IconButton
-                  icon="eye-outline"
-                  color="#1B2A41"
-                  label="Voir"
+        renderItem={({ item }) => {
+          // Mêmes colonnes que la liste du site : libellé, niveau, effectif max., effectif actuel, statut, année
+          const st = classeStatus(item.status);
+          return (
+            <View className="w-full max-w-[640px] self-center px-5 pb-3">
+              <View className="rounded-3xl bg-white p-4 shadow-sm">
+                <Pressable
                   onPress={() => openDetail(item)}
-                />
-                {canEdit && (
-                  <>
-                    <IconButton
-                      icon="create-outline"
-                      color="#2B5EA8"
-                      label="Modifier"
-                      onPress={() => setEditing(item)}
-                    />
-                    <IconButton
-                      icon="trash-outline"
-                      color="#DC2626"
-                      label="Supprimer"
-                      onPress={() => remove(item)}
-                    />
-                  </>
-                )}
+                  accessibilityRole="button"
+                  accessibilityLabel={item.name}
+                  className="active:opacity-70"
+                >
+                  {/* Libellé + statut */}
+                  <View className="flex-row items-start justify-between gap-3">
+                    <Text
+                      numberOfLines={2}
+                      className="flex-1 font-inter-bold text-[16px] text-ink"
+                    >
+                      {item.name}
+                    </Text>
+                    {st && (
+                      <View
+                        className={`rounded-full px-3 py-1 ${st.open === false ? "bg-red-600" : st.open ? "bg-green-100" : "bg-slate-100"}`}
+                      >
+                        <Text
+                          className={`font-inter-semibold text-xs ${st.open === false ? "text-white" : st.open ? "text-green-700" : "text-muted"}`}
+                        >
+                          {st.label}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Niveau « Cinquième (5EME) » */}
+                  <Text numberOfLines={1} className="mt-0.5 font-inter text-[13px] text-muted">
+                    {item.niveau_name
+                      ? item.niveau_slug
+                        ? `${item.niveau_name} (${item.niveau_slug})`
+                        : item.niveau_name
+                      : "Niveau non renseigné"}
+                  </Text>
+
+                  {/* Effectif max., effectif actuel, année scolaire */}
+                  <View className="mt-3 flex-row gap-2 rounded-2xl bg-page p-3">
+                    <Figure label="Effectif max." value={item.max_effectif} />
+                    <Figure label="Effectif actuel" value={item.effectif_actuel} />
+                    <Figure label="Année scolaire" value={item.annee_name || null} />
+                  </View>
+                </Pressable>
+
+                {/* Actions : trois boutons de même largeur, séparés de la carte par un trait */}
+                <View className="mt-3 flex-row gap-2 border-t border-line pt-3">
+                  <CardAction
+                    icon="eye-outline"
+                    label="Voir"
+                    tone="neutral"
+                    onPress={() => openDetail(item)}
+                  />
+                  {canEdit && (
+                    <>
+                      <CardAction
+                        icon="create-outline"
+                        label="Modifier"
+                        tone="primary"
+                        onPress={() => setEditing(item)}
+                      />
+                      <CardAction
+                        icon="trash-outline"
+                        label="Supprimer"
+                        tone="danger"
+                        onPress={() => remove(item)}
+                      />
+                    </>
+                  )}
+                </View>
               </View>
             </View>
-          </View>
-        )}
+          );
+        }}
         ListEmptyComponent={
           loading || failed ? undefined : (
             <View className="w-full max-w-[640px] self-center px-5">
@@ -371,5 +382,54 @@ export function ClassesScreen({ asTab = false }: { asTab?: boolean }) {
         }}
       />
     </View>
+  );
+}
+
+/** Une colonne chiffrée de la carte : libellé en petit, valeur en gras */
+function Figure({ label, value }: { label: string; value: number | string | null }) {
+  return (
+    <View className="flex-1">
+      <Text numberOfLines={1} className="font-inter text-[11px] text-muted">
+        {label}
+      </Text>
+      <Text numberOfLines={1} className="mt-0.5 font-inter-semibold text-[15px] text-ink">
+        {value === null || value === "" ? "—" : String(value)}
+      </Text>
+    </View>
+  );
+}
+
+const ACTION_TONES = {
+  neutral: { box: "bg-page", text: "text-ink", color: "#1B2A41" },
+  primary: { box: "bg-soft", text: "text-primary", color: "#2B5EA8" },
+  danger: { box: "bg-red-50", text: "text-red-600", color: "#DC2626" },
+} as const;
+
+/** Bouton d'action de la carte : icône + libellé, largeur partagée avec les autres */
+function CardAction({
+  icon,
+  label,
+  tone,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  tone: keyof typeof ACTION_TONES;
+  onPress: () => void;
+}) {
+  const t = ACTION_TONES[tone];
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      hitSlop={4}
+      className={`h-11 flex-1 flex-row items-center justify-center gap-1.5 rounded-xl ${t.box} active:opacity-70`}
+    >
+      <Ionicons name={icon} size={17} color={t.color} />
+      <Text numberOfLines={1} className={`font-inter-semibold text-[13px] ${t.text}`}>
+        {label}
+      </Text>
+    </Pressable>
   );
 }

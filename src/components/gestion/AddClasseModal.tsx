@@ -1,5 +1,4 @@
-import { anneeStatus, getAllAnnees } from "@/api/annees";
-import { Classe, ClasseInput } from "@/api/classes";
+import { Classe, ClasseInput, LANGUES_V2, langueV2Value } from "@/api/classes";
 import { apiErrorMessage } from "@/api/client";
 import { getNiveaux } from "@/api/niveaux";
 import { getSalles } from "@/api/salles";
@@ -18,6 +17,8 @@ export type ClasseToEdit = Pick<
   | "public_key"
   | "name"
   | "max_effectif"
+  | "min_effectif"
+  | "lang_v2"
   | "annee_key"
   | "niveau_key"
   | "serie_key"
@@ -51,19 +52,39 @@ type Errors = Partial<Record<keyof ClasseInput, string>>;
 
 /** Les choix des listes, chargés depuis la base à l'ouverture du formulaire */
 type Choices = {
-  annees: Option[];
   niveaux: Option[];
   series: Option[];
   salles: Option[];
+  /** Places de chaque salle (null : capacité inconnue) */
+  places: Record<string, number | null>;
 };
 
+const NO_ROOM = "Aucune salle disponible pour cet effectif maximal !";
+
 const NO_SERIE = "";
+
+const LV2_OPTIONS: Option[] = LANGUES_V2;
 
 /** Niveaux du lycée (Seconde → Terminale) : seuls eux ont une série. Accepte « 2nde », « 1re », « Tle »… */
 const isLycee = (niveauName: string) =>
   /(^|[^a-z0-9])(second|2nd|2de|premi|1er|1re|termin|tle)/.test(
     normalize(niveauName),
   );
+
+/** Quatrième et Troisième. Accepte « 4e », « 4ème », « 3eme », « Quatrième »… */
+const isCollegeHaut = (niveauName: string) =>
+  /(^|[^a-z0-9])(quatri|troisi|[34] ?(e|eme|em)([^a-z0-9]|$))/.test(normalize(niveauName));
+
+/**
+ * Champs selon le niveau (les 5 premiers sont toujours là : niveau, salle, nom, effectifs min et max) :
+ * - Moyenne section → Cinquième : rien de plus
+ * - Quatrième → Troisième : + LV2
+ * - Seconde → Terminale : + LV2 et série
+ */
+const fieldsFor = (niveauName: string) => {
+  const lycee = isLycee(niveauName);
+  return { lv2: lycee || isCollegeHaut(niveauName), serie: lycee };
+};
 
 /** Retrouve la valeur d'une liste : par sa clé si on l'a, sinon par son nom affiché */
 function findValue(options: Option[], key: string, name: string) {
@@ -84,14 +105,22 @@ function ClasseForm({
   onSave,
 }: Omit<Props, "visible" | "classe"> & { classe: ClasseToEdit | null }) {
   const isEdit = !!classe;
-  const [annee, setAnnee] = useState(classe?.annee_key ?? "");
   const [niveau, setNiveau] = useState(classe?.niveau_key ?? "");
   const [serie, setSerie] = useState(classe?.serie_key ?? NO_SERIE);
   const [salle, setSalle] = useState(classe?.salle_key ?? "");
   const [name, setName] = useState(classe?.name ?? "");
+  const [minEffectif, setMinEffectif] = useState(
+    classe?.min_effectif != null ? String(classe.min_effectif) : "",
+  );
   const [maxEffectif, setMaxEffectif] = useState(
     classe?.max_effectif != null ? String(classe.max_effectif) : "",
   );
+  // Une LV2 inconnue de la liste (venue du serveur) reste sélectionnable
+  const [langV2, setLangV2] = useState(langueV2Value(classe?.lang_v2 ?? ""));
+  const lv2Options =
+    langV2 && !LV2_OPTIONS.some((o) => o.value === langV2)
+      ? [...LV2_OPTIONS, { value: langV2, label: langV2 }]
+      : LV2_OPTIONS;
   const [errors, setErrors] = useState<Errors>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
@@ -110,17 +139,12 @@ function ClasseForm({
       });
 
     Promise.all([
-      safe("années", getAllAnnees()),
       safe("niveaux", getNiveaux()),
       safe("séries", getSeries()),
       safe("salles", getSalles()),
-    ]).then(([annees, niveaux, series, salles]) => {
+    ]).then(([niveaux, series, salles]) => {
       if (!active) return;
       const next: Choices = {
-        annees: annees.map((a) => ({
-          value: a.public_key,
-          label: anneeStatus(a) === "active" ? `${a.name} (en cours)` : a.name,
-        })),
         niveaux: niveaux.map((n) => ({ value: n.public_key, label: n.name })),
         series: series.map((s) => ({
           value: s.public_key,
@@ -130,19 +154,15 @@ function ClasseForm({
           value: s.public_key,
           label: s.capacite !== null ? `${s.name} · ${s.capacite} places` : s.name,
         })),
+        places: Object.fromEntries(salles.map((s) => [s.public_key, s.capacite])),
       };
       setChoices(next);
       setChoicesFailed(failed);
       if (classe) {
         // Modification : chaque liste reprend l'élément de la classe (clé, ou à défaut nom)
-        setAnnee(findValue(next.annees, classe.annee_key, classe.annee_name));
         setNiveau(findValue(next.niveaux, classe.niveau_key, classe.niveau_name));
         setSerie(findValue(next.series, classe.serie_key, classe.serie_name));
         setSalle(findValue(next.salles, classe.salle_key, classe.salle_name));
-      } else {
-        // L'année en cours est proposée d'office
-        const current = annees.find((a) => anneeStatus(a) === "active");
-        if (current) setAnnee((v) => v || current.public_key);
       }
     });
     return () => {
@@ -157,9 +177,22 @@ function ClasseForm({
 
   const loadingHint = choices ? undefined : "Chargement…";
 
-  // La série ne concerne que le lycée : le champ n'apparaît que pour Seconde, Première, Terminale
+  // LV2 à partir de la Quatrième, série au lycée seulement
   const niveauName = choices?.niveaux.find((o) => o.value === niveau)?.label ?? "";
-  const needsSerie = isLycee(niveauName);
+  const { lv2: needsLv2, serie: needsSerie } = fieldsFor(niveauName);
+  // Salle : grisée tant que l'effectif maximum n'est pas saisi ; seules les salles assez grandes sont proposées
+  const maxValue = /^\d+$/.test(maxEffectif.trim()) ? Number(maxEffectif.trim()) : null;
+  const salleLocked = maxValue === null || maxValue < 1;
+  const fittingSalles = salleLocked
+    ? []
+    : (choices?.salles ?? []).filter((o) => {
+        const places = choices?.places[o.value];
+        return places == null || places >= (maxValue ?? 0); // capacité inconnue : proposée
+      });
+  const noRoom = !salleLocked && !!choices && fittingSalles.length === 0;
+  // Une salle devenue trop petite (effectif augmenté) n'est plus retenue
+  const chosenSalle = fittingSalles.some((o) => o.value === salle) ? salle : "";
+
   const listError = (label: string) =>
     choicesFailed.includes(label) ? `Impossible de charger les ${label}.` : undefined;
 
@@ -179,28 +212,41 @@ function ClasseForm({
   const submit = () => {
     if (saving) return;
     const next: Errors = {};
+    const min = minEffectif.trim();
     const max = maxEffectif.trim();
 
-    if (!annee) next.annee = "Choisissez une année scolaire";
     if (!niveau) next.niveau = "Choisissez un niveau";
+    if (needsLv2 && !langV2) next.lang_v2 = "Choisissez la langue vivante 2";
     if (needsSerie && !serie) next.serie = "Choisissez une série";
-    if (!salle) next.salle = "Choisissez une salle";
+    if (!chosenSalle)
+      next.salle = noRoom
+        ? NO_ROOM
+        : salleLocked
+          ? "Saisissez d'abord l'effectif maximum"
+          : "Choisissez une salle";
     if (!name.trim()) next.name = "Le nom de la classe est obligatoire";
     if (!max) next.max_effectif = "L'effectif maximum est obligatoire";
     else if (!/^\d+$/.test(max) || Number(max) < 1)
       next.max_effectif = "L'effectif maximum doit être un nombre entier (1 ou plus)";
+    if (!min) next.min_effectif = "L'effectif minimum est obligatoire";
+    else if (!/^\d+$/.test(min))
+      next.min_effectif = "L'effectif minimum doit être un nombre entier (0 ou plus)";
+    else if (!next.max_effectif && Number(min) > Number(max))
+      next.min_effectif = "L'effectif minimum ne peut pas dépasser le maximum";
 
     setErrors(next);
     if (Object.keys(next).length > 0) return false;
 
     save({
-      annee,
       niveau,
       // Hors lycée, aucune série n'est envoyée (même si une avait été choisie avant de changer de niveau)
       ...(needsSerie && serie ? { serie } : {}),
-      salle,
+      salle: chosenSalle,
       name: name.trim(),
+      min_effectif: Number(min),
       max_effectif: Number(max),
+      // Avant la Quatrième, aucune LV2 n'est envoyée (même choisie avant de changer de niveau)
+      ...(needsLv2 && langV2 ? { lang_v2: langV2 } : {}),
     });
     return true;
   };
@@ -215,19 +261,6 @@ function ClasseForm({
       onSubmit={submit}
     >
       <Select
-        label="Année scolaire"
-        icon="calendar-outline"
-        placeholder={loadingHint ?? "Sélectionner une année"}
-        value={annee}
-        options={choices?.annees ?? []}
-        onChange={(v) => {
-          setAnnee(v);
-          clear("annee");
-        }}
-        error={errors.annee ?? listError("années")}
-      />
-
-      <Select
         label="Niveau"
         icon="layers-outline"
         placeholder={loadingHint ?? "Sélectionner un niveau"}
@@ -237,38 +270,9 @@ function ClasseForm({
           setNiveau(v);
           clear("niveau");
           clear("serie");
+          clear("lang_v2");
         }}
         error={errors.niveau ?? listError("niveaux")}
-        searchable
-      />
-
-      {needsSerie && (
-        <Select
-          label="Série"
-          icon="git-branch-outline"
-          placeholder={loadingHint ?? "Sélectionner une série"}
-          value={serie}
-          options={choices?.series ?? []}
-          onChange={(v) => {
-            setSerie(v);
-            clear("serie");
-          }}
-          error={errors.serie ?? listError("séries")}
-          searchable
-        />
-      )}
-
-      <Select
-        label="Salle"
-        icon="cube-outline"
-        placeholder={loadingHint ?? "Sélectionner une salle"}
-        value={salle}
-        options={choices?.salles ?? []}
-        onChange={(v) => {
-          setSalle(v);
-          clear("salle");
-        }}
-        error={errors.salle ?? listError("salles")}
         searchable
       />
 
@@ -285,6 +289,19 @@ function ClasseForm({
       />
 
       <Input
+        label="Effectif minimum"
+        icon="people-outline"
+        placeholder="Ex. 20"
+        value={minEffectif}
+        onChangeText={(t) => {
+          setMinEffectif(t);
+          clear("min_effectif");
+        }}
+        keyboardType="number-pad"
+        error={errors.min_effectif}
+      />
+
+      <Input
         label="Effectif maximum"
         icon="people-outline"
         placeholder="Ex. 45"
@@ -296,6 +313,55 @@ function ClasseForm({
         keyboardType="number-pad"
         error={errors.max_effectif}
       />
+
+      <Select
+        label="Salle"
+        icon="cube-outline"
+        placeholder={
+          loadingHint ??
+          (salleLocked ? "Saisissez d'abord l'effectif maximum" : "Sélectionner une salle")
+        }
+        value={chosenSalle}
+        options={fittingSalles}
+        disabled={salleLocked}
+        onChange={(v) => {
+          setSalle(v);
+          clear("salle");
+        }}
+        error={noRoom ? NO_ROOM : (errors.salle ?? listError("salles"))}
+        searchable
+      />
+
+      {needsLv2 && (
+        <Select
+          label="Langue vivante 2"
+          icon="language-outline"
+          placeholder="Sélectionner une langue"
+          value={langV2}
+          options={lv2Options}
+          onChange={(v) => {
+            setLangV2(v);
+            clear("lang_v2");
+          }}
+          error={errors.lang_v2}
+        />
+      )}
+
+      {needsSerie && (
+        <Select
+          label="Série"
+          icon="git-branch-outline"
+          placeholder={loadingHint ?? "Sélectionner une série"}
+          value={serie}
+          options={choices?.series ?? []}
+          onChange={(v) => {
+            setSerie(v);
+            clear("serie");
+          }}
+          error={errors.serie ?? listError("séries")}
+          searchable
+        />
+      )}
 
       {saveError ? (
         <Text className="font-inter text-[13px] text-red-500">{saveError}</Text>

@@ -181,13 +181,19 @@ export default function FraisDetailScreen() {
               <InfoRow
                 icon="layers-outline"
                 label="Niveau"
-                value={full?.niveau_name || params.niveau_name || "—"}
+                value={full?.niveau_name || params.niveau_name || "Tous les niveaux"}
                 bordered
               />
               <InfoRow
                 icon="checkmark-circle-outline"
                 label="Obligatoire"
                 value={later(full ? (full.is_required ? "Oui" : "Non") : "")}
+                bordered
+              />
+              <InfoRow
+                icon="git-compare-outline"
+                label="Fractionnable"
+                value={later(full ? (full.tranchable ? "Oui, en tranches" : "Non") : "")}
                 bordered
               />
               <InfoRow

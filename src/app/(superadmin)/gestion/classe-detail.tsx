@@ -1,4 +1,6 @@
 import {
+  classeStatus,
+  langueV2Label,
   Classe,
   deleteClasse,
   getClasse,
@@ -26,6 +28,11 @@ export default function ClasseDetail() {
     public_key: string;
     name: string;
     max_effectif: string;
+    min_effectif: string;
+    total_effectif: string;
+    effectif_actuel: string;
+    status: string;
+    lang_v2: string;
     annee_name: string;
     niveau_name: string;
     serie_name: string;
@@ -51,7 +58,15 @@ export default function ClasseDetail() {
       .then((c) => {
         if (active) setFull(c);
       })
-      .catch(() => {}) // route absente ou erreur : on garde les données de la liste
+      .catch((error) => {
+        // Route absente ou erreur : on garde les données de la liste (sans salle ni dates)
+        if (__DEV__)
+          console.log(
+            "Détail de la classe indisponible :",
+            error?.response?.status,
+            error?.response?.data ?? String(error),
+          );
+      })
       .finally(() => {
         if (active) setLoadingFull(false);
       });
@@ -70,6 +85,20 @@ export default function ClasseDetail() {
       full?.max_effectif != null ? String(full.max_effectif) : "",
       params.max_effectif,
     ),
+    min_effectif: pick(
+      full?.min_effectif != null ? String(full.min_effectif) : "",
+      params.min_effectif,
+    ),
+    total_effectif: pick(
+      full?.total_effectif != null ? String(full.total_effectif) : "",
+      params.total_effectif,
+    ),
+    effectif_actuel: pick(
+      full?.effectif_actuel != null ? String(full.effectif_actuel) : "",
+      params.effectif_actuel,
+    ),
+    status: pick(full?.status, params.status),
+    lang_v2: pick(full?.lang_v2, params.lang_v2),
     annee_name: pick(full?.annee_name, params.annee_name),
     niveau_name: pick(full?.niveau_name, params.niveau_name),
     serie_name: pick(full?.serie_name, params.serie_name),
@@ -94,6 +123,8 @@ export default function ClasseDetail() {
     public_key: classe.public_key ?? "",
     name: classe.name ?? "",
     max_effectif: classe.max_effectif ? Number(classe.max_effectif) : null,
+    min_effectif: classe.min_effectif !== "" ? Number(classe.min_effectif) : null,
+    lang_v2: classe.lang_v2 ?? "",
     annee_key: classe.annee_key ?? "",
     niveau_key: classe.niveau_key ?? "",
     serie_key: classe.serie_key ?? "",
@@ -115,6 +146,8 @@ export default function ClasseDetail() {
         showToast(apiErrorMessage(error), "error");
       }
     });
+
+  const status = classeStatus(classe.status);
 
   const subtitle = [classe.niveau_name, classe.serie_name]
     .filter(Boolean)
@@ -180,15 +213,18 @@ export default function ClasseDetail() {
             {/* Informations */}
             <View className="rounded-3xl bg-white px-4 shadow-sm">
               {/* Même ordre que le détail du site web ; la clé publique n'est pas affichée */}
-              <InfoRow
-                icon="text-outline"
-                label="Libellé"
-                value={classe.name}
-              />
+              <InfoRow icon="text-outline" label="Libellé" value={classe.name} />
               <InfoRow
                 icon="calendar-outline"
                 label="Année scolaire"
                 value={classe.annee_name || "—"}
+                bordered
+              />
+              <InfoRow
+                icon="people-outline"
+                label="Effectif minimal"
+                value={classe.min_effectif || "—"}
+                loading={waiting(classe.min_effectif)}
                 bordered
               />
               <InfoRow
@@ -198,23 +234,55 @@ export default function ClasseDetail() {
                 bordered
               />
               <InfoRow
+                icon="people-circle-outline"
+                label="Effectif total"
+                value={classe.total_effectif || "—"}
+                loading={waiting(classe.total_effectif)}
+                bordered
+              />
+              <InfoRow
+                icon="person-outline"
+                label="Effectif actuel"
+                value={classe.effectif_actuel || "—"}
+                loading={waiting(classe.effectif_actuel)}
+                bordered
+              />
+              <InfoRow
+                icon="flag-outline"
+                label="Statut"
+                value={status?.label ?? "—"}
+                tone={status?.open === false ? "closed" : status?.open ? "open" : undefined}
+                loading={waiting(classe.status)}
+                bordered
+              />
+              <InfoRow
                 icon="layers-outline"
                 label="Niveau"
                 value={withCode(classe.niveau_name, classe.niveau_slug)}
                 bordered
               />
+              {/* LV2 et série : seulement si la classe en a (à partir de la 4e, et au lycée) */}
+              {!!classe.lang_v2 && (
+                <InfoRow
+                  icon="language-outline"
+                  label="Langue vivante 2"
+                  value={langueV2Label(classe.lang_v2)}
+                  bordered
+                />
+              )}
+              {!!classe.serie_name && (
+                <InfoRow
+                  icon="git-branch-outline"
+                  label="Série"
+                  value={classe.serie_name}
+                  bordered
+                />
+              )}
               <InfoRow
                 icon="cube-outline"
                 label="Salle"
                 value={withCode(classe.salle_name, classe.salle_slug)}
                 loading={waiting(classe.salle_name)}
-                bordered
-              />
-              <InfoRow
-                icon="git-branch-outline"
-                label="Série"
-                value={classe.serie_name || "—"}
-                loading={waiting(classe.serie_name)}
                 bordered
               />
               <InfoRow
@@ -278,6 +346,7 @@ function InfoRow({
   value,
   bordered,
   loading,
+  tone,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
@@ -285,6 +354,8 @@ function InfoRow({
   bordered?: boolean;
   /** Valeur encore en chargement : un squelette prend sa place */
   loading?: boolean;
+  /** Valeur affichée en pastille : rouge (fermée) ou verte (ouverte) */
+  tone?: "open" | "closed";
 }) {
   return (
     <View
@@ -296,6 +367,16 @@ function InfoRow({
       <Text className="flex-1 font-inter text-[13px] text-muted">{label}</Text>
       {loading ? (
         <Skeleton width={110} height={14} />
+      ) : tone ? (
+        <View
+          className={`rounded-full px-3 py-1 ${tone === "closed" ? "bg-red-600" : "bg-green-100"}`}
+        >
+          <Text
+            className={`font-inter-semibold text-[13px] ${tone === "closed" ? "text-white" : "text-green-700"}`}
+          >
+            {value}
+          </Text>
+        </View>
       ) : (
         <Text
           numberOfLines={2}

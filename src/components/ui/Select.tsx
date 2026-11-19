@@ -22,6 +22,7 @@ type Props = {
   error?: string;
   containerClassName?: string;
   searchable?: boolean; // affiche une zone de recherche dans la liste
+  disabled?: boolean; // champ grisé, qui ne s'ouvre pas
 };
 
 export default function Select({
@@ -34,6 +35,7 @@ export default function Select({
   error,
   containerClassName = "mb-4",
   searchable,
+  disabled,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -49,6 +51,7 @@ export default function Select({
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
 
   const toggle = () => {
+    if (disabled) return;
     animate();
     setOpen((v) => !v);
     setQuery("");
@@ -71,9 +74,11 @@ export default function Select({
 
       <Pressable
         onPress={toggle}
+        disabled={disabled}
+        accessibilityState={{ disabled: !!disabled, expanded: open }}
         className={`h-[54px] flex-row items-center gap-2.5 rounded-2xl border bg-field px-3.5 ${
           error ? "border-red-500" : "border-line"
-        }`}
+        } ${disabled ? "opacity-50" : ""}`}
       >
         <Ionicons
           name={searchable ? "search-outline" : icon}
@@ -93,7 +98,7 @@ export default function Select({
         />
       </Pressable>
 
-      {open && (
+      {open && !disabled && (
         <View className="mt-2 overflow-hidden rounded-2xl border border-line bg-white">
           {searchable && (
             <View className="flex-row items-center gap-2 border-b border-line px-3.5">

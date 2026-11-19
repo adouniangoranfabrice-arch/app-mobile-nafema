@@ -57,17 +57,19 @@ export const TYPES_FRAIS = [
 ].map((value) => ({ value, label: typeFraisLabel(value) }));
 
 /**
- * Corps attendu par POST /frais, toujours avec ses 8 champs :
- * annee et niveau sont des public_key, validite une date-heure ISO « 2027-01-31T00:00:00Z » (null si aucune)
+ * Corps attendu par POST et PUT /frais, toujours avec ses 8 champs :
+ * niveau est une public_key (null : tous les niveaux), validite une date-heure ISO
+ * « 2027-01-31T00:00:00Z » (null si aucune). L'année n'est plus envoyée : le serveur prend l'année en cours.
  */
 export type FraisInput = {
-  annee: string;
-  niveau: string;
+  niveau: string | null;
   name: string;
   type_frais: string;
   montant_frais: number;
   affectation: string | null;
   is_required: boolean;
+  /** Payable en plusieurs tranches */
+  tranchable: boolean;
   validite: string | null;
 };
 
@@ -82,6 +84,7 @@ export type FraisDetail = Frais & {
   annee_public_key: string;
   niveau_public_key: string;
   is_required: boolean;
+  tranchable: boolean;
   validite: string; // « 2026-11-28 », "" si aucune
   affectation: string;
   cree_le: string;
@@ -92,6 +95,7 @@ type RawFraisDetail = RawFrais & {
   annee_public_key?: string | null;
   niveau_public_key?: string | null;
   is_required?: boolean | number | string | null;
+  tranchable?: boolean | number | string | null;
   validite?: string | null;
   affectation?: string | null;
   cree_le?: string | null;
@@ -108,12 +112,14 @@ export async function getFraisDetail(publicKey: string): Promise<FraisDetail> {
   );
   const raw = (data?.data ?? data) as RawFraisDetail;
   const required = raw.is_required;
+  const yes = (v: unknown) => v === true || v === 1 || v === "1" || v === "true";
   return {
     ...toFrais({ ...raw, public_key: raw.public_key ?? publicKey }),
     annee_public_key: raw.annee_public_key ?? "",
     niveau_public_key: raw.niveau_public_key ?? "",
     // 1, "1", true ou "true" : obligatoire
-    is_required: required === true || required === 1 || required === "1" || required === "true",
+    is_required: yes(required),
+    tranchable: yes(raw.tranchable),
     validite: raw.validite ?? "",
     affectation: raw.affectation ?? "",
     cree_le: raw.cree_le ?? raw.created_at ?? "",

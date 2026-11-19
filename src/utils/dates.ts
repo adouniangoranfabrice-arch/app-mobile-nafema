@@ -49,6 +49,17 @@ export const ageOf = (birth: Date, now = new Date()) => {
  */
 export const formatDateTime = (raw?: string | null) => {
   if (!raw) return "";
+  // Format français déjà mis en forme par le serveur : « 18/11/2026 22:11 »
+  const fr = raw.match(
+    /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ T,à]+(\d{1,2})[:h](\d{2}))?/,
+  );
+  if (fr) {
+    const d = new Date(+fr[3], +fr[2] - 1, +fr[1], +(fr[4] ?? 0), +(fr[5] ?? 0));
+    if (fr[4] === undefined) return formatDate(d);
+    const h = String(d.getHours()).padStart(2, "0");
+    const min = String(d.getMinutes()).padStart(2, "0");
+    return `${formatDate(d)} à ${h}:${min}`;
+  }
   const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
   if (!m) return "";
   let d: Date;
