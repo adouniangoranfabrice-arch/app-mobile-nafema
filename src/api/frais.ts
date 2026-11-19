@@ -1,5 +1,6 @@
 import { api } from "@/api/client";
 import { fetchAllPages } from "@/api/pages";
+import { normalize } from "@/utils/text";
 
 /** Un frais tel que renvoyé par GET /frais */
 export type Frais = {
@@ -72,6 +73,26 @@ export type FraisInput = {
   tranchable: boolean;
   validite: string | null;
 };
+
+/** Statuts d'affectation : valeurs exactes attendues par l'API (comme le site) */
+export const AFFECTATIONS_FRAIS = [
+  { value: "tous", label: "Tous les statuts" },
+  { value: "affecte", label: "Affecté" },
+  { value: "non_affecte", label: "Non affecté" },
+  { value: "subventionne", label: "Subventionné" },
+];
+
+// « Non affecté », « NON_AFFECTE », « non-affecte » → « non affecte »
+const plain = (v: string) => normalize(v).replace(/[_-]+/g, " ").trim();
+
+/** La valeur de l'API qui correspond, qu'on lui donne la valeur ou le libellé (« Affecté » → « affecte ») */
+export const affectationValue = (v: string) =>
+  AFFECTATIONS_FRAIS.find((a) => plain(a.value) === plain(v) || plain(a.label) === plain(v))
+    ?.value ?? v;
+
+/** Libellé affiché (« non_affecte » → « Non affecté ») ; une valeur inconnue est affichée telle quelle */
+export const affectationLabel = (v: string) =>
+  AFFECTATIONS_FRAIS.find((a) => a.value === affectationValue(v))?.label ?? v;
 
 /** Crée un frais et renvoie le message de confirmation du serveur */
 export async function createFrais(frais: FraisInput) {

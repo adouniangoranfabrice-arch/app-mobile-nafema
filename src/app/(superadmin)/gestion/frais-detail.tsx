@@ -1,5 +1,6 @@
 import { apiErrorMessage } from "@/api/client";
 import {
+  affectationLabel,
   deleteFrais,
   FraisDetail,
   getFraisDetail,
@@ -205,7 +206,7 @@ export default function FraisDetailScreen() {
               <InfoRow
                 icon="bookmark-outline"
                 label="Statut d'affectation"
-                value={later(full?.affectation ?? "")}
+                value={later(full?.affectation ? affectationLabel(full.affectation) : "")}
                 bordered
               />
               <InfoRow

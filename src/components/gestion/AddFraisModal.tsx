@@ -4,6 +4,8 @@ import {
   FraisInput,
   TYPES_FRAIS,
   typeFraisLabel,
+  AFFECTATIONS_FRAIS,
+  affectationValue,
 } from "@/api/frais";
 import { getNiveaux } from "@/api/niveaux";
 import CheckboxRow from "@/components/ui/CheckboxRow";
@@ -53,7 +55,14 @@ function FraisForm({
   const [validite, setValidite] = useState<Date | null>(
     frais?.validite ? fromISO(frais.validite.slice(0, 10)) : null,
   );
-  const [affectation, setAffectation] = useState(frais?.affectation ?? "");
+  const [affectation, setAffectation] = useState(
+    frais?.affectation ? affectationValue(frais.affectation) : "",
+  );
+  // Une valeur venue du serveur mais absente de la liste reste sélectionnable
+  const affectationOptions =
+    affectation && !AFFECTATIONS_FRAIS.some((a) => a.value === affectation)
+      ? [...AFFECTATIONS_FRAIS, { value: affectation, label: affectation }]
+      : AFFECTATIONS_FRAIS;
   const [required, setRequired] = useState(frais?.is_required ?? false);
   const [tranchable, setTranchable] = useState(frais?.tranchable ?? false);
   const [errors, setErrors] = useState<Errors>({});
@@ -107,6 +116,7 @@ function FraisForm({
     const m = montant.replace(/\s/g, "");
 
     if (!type) next.type_frais = "Choisissez un type";
+    if (!affectation) next.affectation = "Sélectionnez le statut d'affectation";
     if (!name.trim()) next.name = "Le libellé est obligatoire";
     if (!m) next.montant_frais = "Le montant est obligatoire";
     else if (!/^\d+$/.test(m) || Number(m) <= 0)
@@ -120,7 +130,7 @@ function FraisForm({
       name: name.trim(),
       type_frais: type,
       montant_frais: Number(m),
-      affectation: affectation.trim() || null,
+      affectation,
       is_required: required,
       tranchable,
       // Format du modèle de l'API : « 2027-01-31T00:00:00Z » (minuit, sans décalage de fuseau)
@@ -209,12 +219,17 @@ function FraisForm({
         <Text className="font-inter-bold text-[16px] text-ink">Options</Text>
       </View>
 
-      <Input
-        label="Statut d'affectation (optionnel)"
+      <Select
+        label="Statut d'affectation *"
         icon="bookmark-outline"
-        placeholder="Ex. Affecté"
+        placeholder="Sélectionnez le statut"
         value={affectation}
-        onChangeText={setAffectation}
+        options={affectationOptions}
+        onChange={(v) => {
+          setAffectation(v);
+          clear("affectation");
+        }}
+        error={errors.affectation}
       />
 
       <CheckboxRow
