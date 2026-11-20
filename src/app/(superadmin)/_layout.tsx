@@ -58,6 +58,7 @@ export default function PlatformLayout() {
               <Tabs.Screen
                 name="ecoles"
                 options={{
+                  popToTopOnBlur: true, // en revenant sur l'onglet : la liste
                   title: "Établissements",
                   tabBarIcon: icon("business-outline", "business"),
                 }}

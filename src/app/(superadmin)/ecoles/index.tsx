@@ -2,23 +2,38 @@ import { getAllAnnees } from "@/api/annees";
 import { getClasses } from "@/api/classes";
 import { getSalles } from "@/api/salles";
 import { getAllEleves } from "@/api/eleves";
-import { getEtablissements, typeEtablissementLabel } from "@/api/etablissements";
+import {
+  createEtablissement,
+  getEtablissements,
+  typeEtablissementLabel,
+} from "@/api/etablissements";
 import { getUtilisateurs } from "@/api/utilisateurs";
+import AddEtablissementModal from "@/components/gestion/AddEtablissementModal";
+import PasswordReveal from "@/components/gestion/PasswordReveal";
 import FilterChips from "@/components/ui/FilterChips";
+import FixedHeader from "@/components/ui/FixedHeader";
 import SearchBar from "@/components/ui/SearchBar";
 import { SkeletonList } from "@/components/ui/Skeleton";
+import { showToast } from "@/components/ui/Toast";
 import { fmt, normalize } from "@/utils/text";
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  Text,
+  View,
+} from "react-native";
 
 type Status = "active" | "pending" | "suspended";
 
 type School = {
   id: string;
+  /** public_key de l'établissement (GET /etablissements), "" s'il n'est connu que par ses données */
+  key: string;
   name: string;
   city: string;
   type: string;
@@ -35,27 +50,34 @@ type School = {
 const truthy = (v: unknown) => v === true || v === 1 || v === "1";
 
 /** L'unique élément d'un ensemble, sinon null (aucun ou plusieurs : on ne devine pas) */
-const onlyOne = <T,>(set: Set<T> | undefined) => (set?.size === 1 ? [...set][0] : null);
+const onlyOne = <T,>(set: Set<T> | undefined) =>
+  set?.size === 1 ? [...set][0] : null;
 
-type Building = School & { activeYear: boolean; apiStatus: "" | Status; effectif: number };
+type Building = School & {
+  activeYear: boolean;
+  apiStatus: "" | Status;
+  effectif: number;
+};
 
 /**
  * Établissements de la base : GET /etablissements, complété par ce qui y est rattaché
  * (utilisateurs, années, classes, élèves). Regroupés par nom : la base donne parfois deux clés pour la même école.
  */
 async function loadSchools(): Promise<School[]> {
-  const [etabs, users, annees, classes, eleves, salles] = await Promise.allSettled([
-    getEtablissements(),
-    getUtilisateurs(),
-    getAllAnnees(),
-    getClasses(),
-    getAllEleves(),
-    getSalles(),
-  ]);
+  const [etabs, users, annees, classes, eleves, salles] =
+    await Promise.allSettled([
+      getEtablissements(),
+      getUtilisateurs(),
+      getAllAnnees(),
+      getClasses(),
+      getAllEleves(),
+      getSalles(),
+    ]);
   if ([etabs, users, annees, classes].every((r) => r.status === "rejected")) {
     throw new Error("Aucune source n'a répondu");
   }
-  const ok = <T,>(r: PromiseSettledResult<T[]>): T[] => (r.status === "fulfilled" ? r.value : []);
+  const ok = <T,>(r: PromiseSettledResult<T[]>): T[] =>
+    r.status === "fulfilled" ? r.value : [];
 
   const map = new Map<string, Building>();
   const get = (name: string | undefined) => {
@@ -65,6 +87,7 @@ async function loadSchools(): Promise<School[]> {
     if (!s) {
       s = {
         id,
+        key: "",
         name: name ?? "",
         city: "",
         type: "",
@@ -95,6 +118,7 @@ async function loadSchools(): Promise<School[]> {
     const s = get(e.name);
     if (!s) continue;
     link(e.public_key, s);
+    s.key ||= e.public_key;
     s.city ||= e.city;
     s.type ||= e.type;
     s.apiStatus ||= e.status;
@@ -116,7 +140,8 @@ async function loadSchools(): Promise<School[]> {
     link(a.etab_public_key, s);
     if (a.public_key) etabOfAnnee.set(a.public_key, s);
     const n = normalize(a.name);
-    if (n) etabsOfAnneeName.set(n, (etabsOfAnneeName.get(n) ?? new Set()).add(s));
+    if (n)
+      etabsOfAnneeName.set(n, (etabsOfAnneeName.get(n) ?? new Set()).add(s));
     if (truthy(a.is_active) && !truthy(a.is_closed)) s.activeYear = true;
   }
   // Salles : comptées par établissement ; salle → établissement pour les classes
@@ -144,7 +169,9 @@ async function loadSchools(): Promise<School[]> {
     s.effectif += c.effectif_actuel ?? c.total_effectif ?? 0;
   }
   if (__DEV__ && orphanClasses > 0) {
-    console.log(`Établissements : ${orphanClasses} classe(s) sans établissement reconnu (la réponse de GET /classes ne donne pas leur établissement)`);
+    console.log(
+      `Établissements : ${orphanClasses} classe(s) sans établissement reconnu (la réponse de GET /classes ne donne pas leur établissement)`,
+    );
   }
   for (const e of ok(eleves)) {
     const s = e.etab_name ? map.get(normalize(e.etab_name)) : undefined;
@@ -185,25 +212,39 @@ const STATUS = {
 /* ---------- Écran ---------- */
 
 export default function Ecoles() {
-  const insets = useSafeAreaInsets();
+  const router = useRouter();
   const [schools, setSchools] = useState<School[]>([]);
-  const [loadState, setLoadState] = useState<"loading" | "refreshing" | "idle" | "failed">("loading");
+  const [loadState, setLoadState] = useState<
+    "loading" | "refreshing" | "idle" | "failed"
+  >("loading");
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | Status>("all");
+  const [adding, setAdding] = useState(false);
+  // Identifiants du gérant après une création : affichés 3 minutes, puis oubliés
+  const [access, setAccess] = useState<{
+    school: string;
+    email: string;
+    password: string;
+  } | null>(null);
+  const hideAccess = useCallback(() => setAccess(null), []);
   const lastRequest = useRef(0);
 
-  const load = useCallback(async (next: "loading" | "refreshing" | "silent") => {
-    const request = ++lastRequest.current;
-    if (next !== "silent") setLoadState(next);
-    try {
-      const list = await loadSchools();
-      if (request !== lastRequest.current) return; // une requête plus récente a pris le relais
-      setSchools(list);
-      setLoadState("idle");
-    } catch {
-      if (request === lastRequest.current && next !== "silent") setLoadState("failed");
-    }
-  }, []);
+  const load = useCallback(
+    async (next: "loading" | "refreshing" | "silent") => {
+      const request = ++lastRequest.current;
+      if (next !== "silent") setLoadState(next);
+      try {
+        const list = await loadSchools();
+        if (request !== lastRequest.current) return; // une requête plus récente a pris le relais
+        setSchools(list);
+        setLoadState("idle");
+      } catch {
+        if (request === lastRequest.current && next !== "silent")
+          setLoadState("failed");
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     load("loading");
@@ -231,7 +272,8 @@ export default function Ecoles() {
     const q = normalize(query);
     return schools.filter((s) => {
       const matchesFilter = filter === "all" || s.status === filter;
-      const matchesQuery = !q || normalize(`${s.name} ${s.city} ${s.type}`).includes(q);
+      const matchesQuery =
+        !q || normalize(`${s.name} ${s.city} ${s.type}`).includes(q);
       return matchesFilter && matchesQuery;
     });
   }, [schools, query, filter]);
@@ -240,11 +282,72 @@ export default function Ecoles() {
     <View className="flex-1 bg-page">
       <StatusBar style="dark" />
 
+      {/* Haut fixe : titre, résumé, recherche et filtres */}
+      <FixedHeader>
+        {/* Titre + bouton d'ajout */}
+        <View className="flex-row items-center justify-between gap-3">
+          <View className="flex-1">
+            <Text className="font-inter-bold text-[20px] leading-9 text-ink">
+              Établissements
+            </Text>
+            <Text className="mt-1 font-inter text-[13px] text-muted">
+              Tous les établissements de la plateforme
+            </Text>
+          </View>
+          <Pressable
+            onPress={() => setAdding(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Nouvel établissement"
+            className="h-11 w-11 items-center justify-center rounded-full bg-primary active:opacity-80"
+          >
+            <Ionicons name="add" size={24} color="#FFFFFF" />
+          </Pressable>
+        </View>
+
+        {/* Résumé */}
+        <View className="flex-row rounded-3xl bg-white py-4 shadow-sm">
+          <Summary
+            value={loading ? "…" : String(schools.length)}
+            label="Établissements"
+          />
+          <Summary
+            value={loading ? "…" : fmt(totalStudents)}
+            label="Élèves"
+            bordered
+          />
+          <Summary
+            value={loading ? "…" : fmt(totalPersonnel)}
+            label="Personnel"
+            bordered
+          />
+        </View>
+
+        {/* Recherche + filtres */}
+        <SearchBar
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Rechercher un établissement ou une ville"
+        />
+        <FilterChips
+          selected={filter}
+          onSelect={(k) => setFilter(k as "all" | Status)}
+          chips={[
+            { key: "all", label: "Tous", count: schools.length },
+            { key: "active", label: "Actifs", count: countOf("active") },
+            { key: "pending", label: "À valider", count: countOf("pending") },
+            {
+              key: "suspended",
+              label: "Suspendus",
+              count: countOf("suspended"),
+            },
+          ]}
+        />
+      </FixedHeader>
+
+      {/* Seule la liste défile, sous les filtres */}
       <ScrollView
-        contentContainerStyle={{
-          paddingTop: insets.top + 12,
-          paddingBottom: 32,
-        }}
+        className="flex-1"
+        contentContainerStyle={{ paddingTop: 12, paddingBottom: 32 }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -257,48 +360,14 @@ export default function Ecoles() {
         }
       >
         <View className="w-full max-w-[640px] gap-4 self-center px-5">
-          {/* Titre + bouton d'ajout */}
-          <View className="flex-row items-center justify-between gap-3">
-            <View className="flex-1">
-              <Text className="font-inter-bold text-[20px] leading-9 text-ink">
-                Établissements
-              </Text>
-              <Text className="mt-1 font-inter text-[13px] text-muted">
-                Tous les établissements de la plateforme
-              </Text>
-            </View>
-            <Pressable className="h-11 w-11 items-center justify-center rounded-full bg-primary active:opacity-80">
-              <Ionicons name="add" size={24} color="#FFFFFF" />
-            </Pressable>
-          </View>
-
-          {/* Résumé */}
-          <View className="flex-row rounded-3xl bg-white py-4 shadow-sm">
-            <Summary value={loading ? "…" : String(schools.length)} label="Établissements" />
-            <Summary value={loading ? "…" : fmt(totalStudents)} label="Élèves" bordered />
-            <Summary value={loading ? "…" : fmt(totalPersonnel)} label="Personnel" bordered />
-          </View>
-
-          {/* Recherche + filtres */}
-          <SearchBar
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Rechercher un établissement ou une ville"
-          />
-          <FilterChips
-            selected={filter}
-            onSelect={(k) => setFilter(k as "all" | Status)}
-            chips={[
-              { key: "all", label: "Tous", count: schools.length },
-              { key: "active", label: "Actifs", count: countOf("active") },
-              { key: "pending", label: "À valider", count: countOf("pending") },
-              {
-                key: "suspended",
-                label: "Suspendus",
-                count: countOf("suspended"),
-              },
-            ]}
-          />
+          {access && (
+            <PasswordReveal
+              school={access.school}
+              email={access.email}
+              password={access.password}
+              onDone={hideAccess}
+            />
+          )}
 
           <Text className="font-inter text-xs text-muted">
             {loading
@@ -311,12 +380,21 @@ export default function Ecoles() {
             <SkeletonList />
           ) : loadState === "failed" ? (
             <View className="items-center gap-3 rounded-3xl bg-white py-12">
-              <Ionicons name="cloud-offline-outline" size={28} color="#9AA7B8" />
+              <Ionicons
+                name="cloud-offline-outline"
+                size={28}
+                color="#9AA7B8"
+              />
               <Text className="font-inter-semibold text-[15px] text-ink">
                 Impossible de charger les établissements
               </Text>
-              <Pressable onPress={() => load("loading")} className="active:opacity-70">
-                <Text className="font-inter-semibold text-[14px] text-primary">Réessayer</Text>
+              <Pressable
+                onPress={() => load("loading")}
+                className="active:opacity-70"
+              >
+                <Text className="font-inter-semibold text-[14px] text-primary">
+                  Réessayer
+                </Text>
               </Pressable>
             </View>
           ) : filtered.length === 0 ? (
@@ -335,6 +413,15 @@ export default function Ecoles() {
               return (
                 <Pressable
                   key={s.id}
+                  disabled={!s.key}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/(superadmin)/ecoles/etablissement-detail",
+                      params: { public_key: s.key, name: s.name },
+                    })
+                  }
+                  accessibilityRole="button"
+                  accessibilityLabel={s.name}
                   className="gap-3 rounded-3xl bg-white p-4 shadow-sm active:opacity-90"
                 >
                   <View className="flex-row items-center gap-3">
@@ -379,7 +466,9 @@ export default function Ecoles() {
                   {s.note && (
                     <Text
                       className={`font-inter text-[13px] ${
-                        s.status === "suspended" ? "text-red-600" : "text-[#7A5F00]"
+                        s.status === "suspended"
+                          ? "text-red-600"
+                          : "text-[#7A5F00]"
                       }`}
                     >
                       {s.note}
@@ -391,6 +480,26 @@ export default function Ecoles() {
           )}
         </View>
       </ScrollView>
+
+      <AddEtablissementModal
+        visible={adding}
+        onClose={() => setAdding(false)}
+        onSave={async (input) => {
+          const { message, password } = await createEtablissement(input);
+          setAdding(false);
+          if (password) {
+            showToast(message);
+            setAccess({ school: input.name, email: input.dir_mail, password });
+          } else {
+            // Compte créé, mais le serveur n'a pas renvoyé le mot de passe généré
+            showToast(
+              `${message} Le mot de passe généré n'a pas été renvoyé par le serveur.`,
+              "error",
+            );
+          }
+          load("refreshing");
+        }}
+      />
     </View>
   );
 }

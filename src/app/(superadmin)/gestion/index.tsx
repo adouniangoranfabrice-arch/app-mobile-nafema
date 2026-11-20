@@ -472,6 +472,18 @@ function OrganisationManagement() {
     >
       {keys.map((key) => {
         const config = ENTITIES[key];
+        // Établissements : l'onglet branché sur la base, avec le formulaire en 4 étapes
+        if (key === "etablissements") {
+          return (
+            <LinkRow
+              key={key}
+              icon={config.icon}
+              title={config.title}
+              summary="Liste des établissements"
+              onPress={() => router.push("/(superadmin)/ecoles")}
+            />
+          );
+        }
         // Ces rubriques viennent de l'API : elles ont leur propre écran
         if (
           key === "cycles" ||
