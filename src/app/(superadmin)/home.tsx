@@ -288,7 +288,7 @@ export default function PlatformHome() {
                 icon={
                   <Ionicons name="pulse-outline" size={20} color="#6B7A90" />
                 }
-                label="Écoles actives"
+                label="Établissements actifs"
                 sub={`${activeSchools} sur ${etabs.length} avec une année ouverte`}
               />
             </View>

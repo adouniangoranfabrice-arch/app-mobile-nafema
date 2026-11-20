@@ -6,7 +6,10 @@ import Input from "@/components/ui/Input";
 import Segmented from "@/components/ui/Segmented";
 import { showToast } from "@/components/ui/Toast";
 import { fromISO, toISO } from "@/organisation/helpers";
-import { useState } from "react";
+import { getFrais } from "@/api/frais";
+import Select, { Option } from "@/components/ui/Select";
+import { fcfa } from "@/data/finances";
+import { useEffect, useState } from "react";
 import { Text } from "react-native";
 
 type Props = {
@@ -36,7 +39,40 @@ function EcheanceForm({
   onSave,
 }: Omit<Props, "visible" | "echeance"> & { echeance: Echeance | null }) {
   const isEdit = !!echeance;
+  const [frais, setFrais] = useState(echeance?.frais_key ?? "");
   const [name, setName] = useState(echeance?.name ?? "");
+
+  // Frais de la base : le serveur ne renvoie que ceux de l'école du compte connecté
+  const [fraisOptions, setFraisOptions] = useState<Option[] | null>(null);
+  const [fraisFailed, setFraisFailed] = useState(false);
+  useEffect(() => {
+    let active = true;
+    getFrais()
+      .then((all) => {
+        if (!active) return;
+        const options = all
+          .filter((f) => f.public_key)
+          .map((f) => ({
+            value: f.public_key,
+            label: [f.name, fcfa(f.montant_frais), f.niveau_name || "Tous les niveaux"].join(" · "),
+          }));
+        setFraisOptions(options);
+        // Modification : la réponse ne donnait que le nom du frais, on retrouve sa clé
+        if (!frais && echeance?.frais_name) {
+          const hit = all.find((f) => f.name === echeance.frais_name);
+          if (hit) setFrais(hit.public_key);
+        }
+      })
+      .catch(() => {
+        if (!active) return;
+        setFraisOptions([]);
+        setFraisFailed(true);
+      });
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- chargé une fois, à l'ouverture
+  }, []);
   const [date, setDate] = useState<Date | null>(
     echeance?.date_echeance ? fromISO(echeance.date_echeance) : null,
   );
@@ -73,6 +109,7 @@ function EcheanceForm({
     const o = ordre.trim();
     const p = pourcentage.trim().replace(",", ".");
 
+    if (!frais) next.frais = "Choisissez le frais concerné";
     if (!name.trim()) next.name = "Le libellé est obligatoire";
     if (!date) next.date_echeance = "Choisissez la date d'échéance";
     if (!/^\d+$/.test(o) || Number(o) < 1) next.ordre = "L'ordre doit être un nombre entier (1 ou plus)";
@@ -84,6 +121,7 @@ function EcheanceForm({
     if (Object.keys(next).length > 0 || !date) return false;
 
     save({
+      frais,
       name: name.trim(),
       date_echeance: toISO(date),
       ordre: Number(o),
@@ -102,6 +140,27 @@ function EcheanceForm({
       onClose={onClose}
       onSubmit={submit}
     >
+      <Select
+        label="Frais"
+        icon="cash-outline"
+        placeholder={fraisOptions ? "Sélectionner un frais" : "Chargement…"}
+        value={frais}
+        options={fraisOptions ?? []}
+        searchable
+        onChange={(v) => {
+          setFrais(v);
+          clear("frais");
+        }}
+        error={
+          errors.frais ??
+          (fraisFailed
+            ? "Impossible de charger les frais."
+            : fraisOptions && fraisOptions.length === 0
+              ? "Aucun frais enregistré : créez d'abord un frais."
+              : undefined)
+        }
+      />
+
       <Input
         label="Libellé"
         icon="text-outline"

@@ -101,6 +101,8 @@ export default function Echeances() {
     confirmDelete("Supprimer cette échéance ?", e.name, async () => {
       try {
         const message = await deleteEcheance(e.public_key);
+        // Retirée tout de suite de l'écran, puis la liste est rechargée depuis le serveur
+        setEcheances((list) => list.filter((x) => x.public_key !== e.public_key));
         load("refreshing");
         showToast(message);
       } catch (error) {
@@ -117,7 +119,7 @@ export default function Echeances() {
   const visible = echeances.filter(
     (e) =>
       (filter === "all" || (filter === "active") === isActive(e)) &&
-      (!q || normalize(`${e.name} ${e.annee_name}`).includes(q)),
+      (!q || normalize(`${e.name} ${e.frais_name} ${e.annee_name}`).includes(q)),
   );
 
   const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
@@ -244,7 +246,9 @@ export default function Echeances() {
                     </View>
                   </View>
                   <Text className="mt-0.5 font-inter text-[13px] text-muted">
-                    {item.annee_name ? `Année ${item.annee_name}` : "Année non renseignée"}
+                    {[item.frais_name, item.annee_name ? `Année ${item.annee_name}` : ""]
+                      .filter(Boolean)
+                      .join(" · ") || "Année non renseignée"}
                   </Text>
 
                   <View className="mt-3 flex-row gap-2 rounded-2xl bg-page p-3">

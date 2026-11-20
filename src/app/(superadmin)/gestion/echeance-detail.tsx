@@ -117,6 +117,9 @@ export default function EcheanceDetail() {
 
               <View className="rounded-3xl bg-white px-4 shadow-sm">
                 <Row icon="text-outline" label="Libellé" value={echeance.name} />
+                {!!echeance.frais_name && (
+                  <Row icon="cash-outline" label="Frais" value={echeance.frais_name} bordered />
+                )}
                 <Row icon="calendar-outline" label="Année scolaire" value={echeance.annee_name || "—"} bordered />
                 <Row
                   icon="alarm-outline"
@@ -137,6 +140,12 @@ export default function EcheanceDetail() {
                     </Text>
                   </View>
                 </View>
+                <Row
+                  icon="person-circle-outline"
+                  label="Créée par"
+                  value={echeance.cree_par || "—"}
+                  bordered
+                />
                 <Row icon="add-circle-outline" label="Créée le" value={formatDateTime(echeance.created_at) || "—"} bordered />
                 {/* « Modifiée le » seulement si l'échéance a été modifiée après sa création */}
                 {!!echeance.updated_at && echeance.updated_at !== echeance.created_at && (

@@ -190,7 +190,7 @@ export default function Eleves() {
                 Élèves
               </Text>
               <Text className="mt-1 font-inter text-[13px] text-muted">
-                Toutes les écoles de la plateforme
+                Tous les établissements de la plateforme
               </Text>
             </View>
             <Pressable className="h-11 w-11 items-center justify-center rounded-full bg-white shadow-sm active:opacity-80">

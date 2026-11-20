@@ -71,7 +71,7 @@ export default function PlatformStats({ start }: { start: boolean }) {
           <Tile
             start={start}
             value={stats.totals.etablissements}
-            label="Écoles"
+            label="Établissements"
             icon="business-outline"
           />
         </View>

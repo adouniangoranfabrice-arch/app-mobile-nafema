@@ -40,7 +40,23 @@ api.interceptors.request.use(async (config) => {
 });
 
 /** Message à afficher quand une requête échoue : le serveur explique déjà ses refus */
+/** Le serveur a répondu (statut 200) mais refuse l'opération : { success: false, message } */
+export class ServerRefusal extends Error {
+  name = "ServerRefusal"; // reconnu par son nom : instanceof n'est pas fiable sur les sous-classes d'Error compilées
+}
+
+/** Lève ServerRefusal si la réponse dit success: false ; sinon renvoie le message du serveur ou le message par défaut */
+export function okMessage(
+  data: { success?: boolean; message?: string } | null | undefined,
+  fallback: string,
+) {
+  if (data?.success === false)
+    throw new ServerRefusal(data.message || "Le serveur a refusé l'opération.");
+  return data?.message || fallback;
+}
+
 export function apiErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.name === "ServerRefusal") return error.message;
   if (axios.isAxiosError(error)) {
     if (!error.response)
       return "Impossible de joindre le serveur. Vérifiez votre connexion.";

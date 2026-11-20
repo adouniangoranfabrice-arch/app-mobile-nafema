@@ -58,16 +58,14 @@ export default function PlatformLayout() {
               <Tabs.Screen
                 name="ecoles"
                 options={{
-                  title: "Écoles",
+                  title: "Établissements",
                   tabBarIcon: icon("business-outline", "business"),
                 }}
               />
               <Tabs.Screen
                 name="eleves"
-                options={{
-                  title: "Élèves",
-                  tabBarIcon: icon("school-outline", "school"),
-                }}
+                // Onglet retiré de la barre (la liste des élèves reste dans Gestion)
+                options={{ href: null }}
               />
               {/* <Tabs.Screen
                 name="utilisateurs"

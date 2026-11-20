@@ -186,10 +186,10 @@ export default function Ecoles() {
           <View className="flex-row items-center justify-between gap-3">
             <View className="flex-1">
               <Text className="font-inter-bold text-[20px] leading-9 text-ink">
-                Écoles
+                Établissements
               </Text>
               <Text className="mt-1 font-inter text-[13px] text-muted">
-                Toutes les écoles de la plateforme
+                Tous les établissements de la plateforme
               </Text>
             </View>
             <Pressable className="h-11 w-11 items-center justify-center rounded-full bg-primary active:opacity-80">
@@ -199,7 +199,7 @@ export default function Ecoles() {
 
           {/* Résumé */}
           <View className="flex-row rounded-3xl bg-white py-4 shadow-sm">
-            <Summary value={String(schools.length)} label="Écoles" />
+            <Summary value={String(schools.length)} label="Établissements" />
             <Summary value={fmt(totalStudents)} label="Élèves" bordered />
             <Summary value={fmt(totalTeachers)} label="Enseignants" bordered />
           </View>

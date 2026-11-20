@@ -1,4 +1,4 @@
-import { api } from "@/api/client";
+import { api, okMessage } from "@/api/client";
 import { fetchAllPages } from "@/api/pages";
 
 /**
@@ -11,6 +11,11 @@ export const ECHEANCES_FICTIVES = false;
 export type Echeance = {
   public_key: string;
   name: string;
+  /** Frais auquel l'échéance s'applique ("" si la réponse ne le donne pas) */
+  frais_key: string;
+  frais_name: string;
+  /** Nom de la personne (admin école) qui a créé l'échéance, "" si la réponse ne le donne pas */
+  cree_par: string;
   annee_name: string;
   /** « 2026-12-15 », "" si absente */
   date_echeance: string;
@@ -24,6 +29,8 @@ export type Echeance = {
 
 /** Ce que le formulaire produit ; toBody le traduit dans le format de l'API */
 export type EcheanceInput = {
+  /** public_key du frais */
+  frais: string;
   name: string;
   date_echeance: string; // « 2026-12-15 »
   ordre: number;
@@ -33,6 +40,7 @@ export type EcheanceInput = {
 
 /** Corps attendu par POST /echeances (et PUT) */
 type EcheanceBody = {
+  frais: string;
   name: string;
   validite: string; // « 2026-12-15 », comme le serveur la stocke et la renvoie
   order: number;
@@ -41,13 +49,14 @@ type EcheanceBody = {
 };
 
 const toBody = (e: EcheanceInput): EcheanceBody => ({
+  frais: e.frais,
   name: e.name,
   // Date seule : le détail renvoie « 2026-11-19 » ; le format long faisait échouer la création
   validite: e.date_echeance,
   order: e.ordre,
   pourcent: e.pourcentage,
-  // Valeurs exactes du site : « active » et « Inactive »
-  status: e.status === "active" ? "active" : "Inactive",
+  // Valeurs acceptées par le serveur : « active » et « inactive » (« Inactive » est refusé)
+  status: e.status,
 });
 
 export const STATUTS_ECHEANCE = [
@@ -65,6 +74,17 @@ type RawEcheance = {
   public_key?: string;
   name?: string;
   libelle?: string;
+  frais?: { public_key?: string; name?: string } | string | null;
+  frais_public_key?: string | null;
+  frais_name?: string | null;
+  // Créateur : plusieurs noms possibles, objet utilisateur ou simple texte
+  cree_par?: Person;
+  creee_par?: Person;
+  created_by?: Person;
+  createur?: Person;
+  auteur?: Person;
+  user?: Person;
+  utilisateur?: Person;
   annee_name?: string;
   annee?: { name?: string } | string | null;
   annee_scolaire?: { name?: string } | string | null; // nom utilisé par GET /echeances/{echeance}
@@ -84,6 +104,21 @@ type RawEcheance = {
   modifiee_le?: string | null;
 };
 
+type Person =
+  | { full_name?: string; name?: string; firstname?: string; nom?: string; prenoms?: string }
+  | string
+  | null;
+
+/** « KOUASSI Aya » à partir d'un utilisateur imbriqué ou d'un texte */
+const personName = (p: Person | undefined) => {
+  if (!p) return "";
+  if (typeof p === "string") return p;
+  return (
+    p.full_name ||
+    [p.name ?? p.nom, p.firstname ?? p.prenoms].filter(Boolean).join(" ")
+  );
+};
+
 const refName = (r: { name?: string } | string | null | undefined) =>
   !r ? "" : typeof r === "string" ? r : (r.name ?? "");
 
@@ -95,6 +130,14 @@ const num = (v: unknown) => {
 const toEcheance = (e: RawEcheance): Echeance => ({
   public_key: e.public_key ?? String(e.id ?? ""),
   name: e.name ?? e.libelle ?? "",
+  // frais : objet { public_key, name } ou simple public_key
+  frais_key:
+    e.frais_public_key ||
+    (typeof e.frais === "string" ? e.frais : (e.frais?.public_key ?? "")),
+  frais_name: e.frais_name || (typeof e.frais === "object" ? (e.frais?.name ?? "") : ""),
+  cree_par: personName(
+    e.cree_par ?? e.creee_par ?? e.created_by ?? e.createur ?? e.auteur ?? e.user ?? e.utilisateur,
+  ),
   annee_name:
     e.annee_name ||
     refName(e.annee_scolaire) ||
@@ -130,6 +173,9 @@ const fictives: Echeance[] = [
 ].map(({ n, name, date, pct }) => ({
   public_key: `FICTIF-ECH${n}`,
   name,
+  frais_key: "",
+  frais_name: "Frais de scolarité",
+  cree_par: "Admin école (exemple)",
   annee_name: "2026-2027",
   date_echeance: date,
   ordre: n,
@@ -162,6 +208,7 @@ export async function getEcheance(publicKey: string): Promise<Echeance> {
     `/echeances/${encodeURIComponent(publicKey)}`,
   );
   const raw = (data?.data ?? data) as RawEcheance;
+  if (__DEV__) console.log("Échéance reçue (détail) :", JSON.stringify(raw)); // pour caler les champs
   return toEcheance({ ...raw, public_key: raw?.public_key ?? publicKey });
 }
 
@@ -172,6 +219,9 @@ export async function createEcheance(input: EcheanceInput, anneeName: string) {
     fictives.push({
       public_key: `FICTIF-${Date.now()}`,
       ...input,
+      frais_key: input.frais,
+      frais_name: "",
+      cree_par: "",
       annee_name: anneeName,
       created_at: now(),
       updated_at: "",
@@ -204,10 +254,11 @@ export async function deleteEcheance(publicKey: string) {
     if (i >= 0) fictives.splice(i, 1);
     return "Échéance supprimée (mode fictif).";
   }
-  const { data } = await api.delete<{ message?: string }>(
+  const { data } = await api.delete<{ success?: boolean; message?: string }>(
     `/echeances/${encodeURIComponent(publicKey)}`,
   );
-  return data?.message || "Échéance supprimée avec succès.";
+  // Réponse 200 mais success: false (échéance utilisée…) : c'est un refus, pas une suppression
+  return okMessage(data, "Échéance supprimée avec succès.");
 }
 
 // Une échéance modifiée depuis son détail : la liste se recharge à son retour
