@@ -10,6 +10,8 @@ export type Eleve = {
   niveau_name: string;
   /** « M », « F » ou "" si l'API ne le donne pas */
   gender: string;
+  /** Établissement de l'élève, "" si la réponse ne le donne pas */
+  etab_name: string;
 };
 
 /** Le format exact de GET /eleves n'est pas encore connu : on accepte les variantes habituelles de l'API */
@@ -28,6 +30,8 @@ type RawEleve = {
   niveau_name?: string;
   gender?: string | null;
   sexe?: string | null;
+  etab_name?: string;
+  etablissement?: { name?: string } | string | null;
 };
 
 function toEleve(e: RawEleve): Eleve {
@@ -41,6 +45,9 @@ function toEleve(e: RawEleve): Eleve {
     classe_name: e.classe_name ?? "",
     niveau_name: e.niveau_name ?? "",
     gender: (e.gender ?? e.sexe ?? "").trim().toUpperCase().slice(0, 1),
+    etab_name:
+      e.etab_name ||
+      (typeof e.etablissement === "string" ? e.etablissement : (e.etablissement?.name ?? "")),
   };
 }
 

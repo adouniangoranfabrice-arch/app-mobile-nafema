@@ -317,6 +317,7 @@ export default function NouvelleInscription() {
                 nom: st.lastName,
                 prenoms: st.firstNames,
                 matricule: st.matricule,
+                etab_name: "",
                 classe_name: "",
                 niveau_name: "",
                 gender: st.sex.startsWith("F") ? "F" : "M",

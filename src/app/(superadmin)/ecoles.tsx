@@ -1,10 +1,18 @@
+import { getAllAnnees } from "@/api/annees";
+import { getClasses } from "@/api/classes";
+import { getSalles } from "@/api/salles";
+import { getAllEleves } from "@/api/eleves";
+import { getEtablissements, typeEtablissementLabel } from "@/api/etablissements";
+import { getUtilisateurs } from "@/api/utilisateurs";
 import FilterChips from "@/components/ui/FilterChips";
 import SearchBar from "@/components/ui/SearchBar";
+import { SkeletonList } from "@/components/ui/Skeleton";
 import { fmt, normalize } from "@/utils/text";
 import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useMemo, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type Status = "active" | "pending" | "suspended";
@@ -16,118 +24,153 @@ type School = {
   type: string;
   status: Status;
   students: number;
-  teachers: number;
+  personnel: number;
   classes: number;
+  salles: number;
   note?: string;
 };
 
-/* ---------- Données fictives (à remplacer par ton API) ---------- */
+/* ---------- Données de la base ---------- */
 
-const INITIAL_SCHOOLS: School[] = [
-  {
-    id: "e1",
-    name: "Collège des Almadies",
-    city: "Dakar",
-    type: "Établissement privé",
-    status: "active",
-    students: 486,
-    teachers: 32,
-    classes: 18,
-  },
-  {
-    id: "e2",
-    name: "Lycée Excellence",
-    city: "Thiès",
-    type: "Établissement privé",
-    status: "active",
-    students: 580,
-    teachers: 48,
-    classes: 22,
-  },
-  {
-    id: "e3",
-    name: "École Horizon",
-    city: "Saint-Louis",
-    type: "Établissement privé",
-    status: "pending",
-    students: 0,
-    teachers: 0,
-    classes: 0,
-    note: "Dossier reçu le 6 oct.",
-  },
-  {
-    id: "e4",
-    name: "Groupe scolaire Les Baobabs",
-    city: "Mbour",
-    type: "Établissement privé",
-    status: "pending",
-    students: 0,
-    teachers: 0,
-    classes: 0,
-    note: "Dossier reçu le 5 oct.",
-  },
-  {
-    id: "e5",
-    name: "Collège Teranga",
-    city: "Rufisque",
-    type: "Établissement public",
-    status: "active",
-    students: 612,
-    teachers: 41,
-    classes: 20,
-  },
-  {
-    id: "e6",
-    name: "Lycée Kajoor",
-    city: "Louga",
-    type: "Établissement public",
-    status: "active",
-    students: 704,
-    teachers: 52,
-    classes: 24,
-  },
-  {
-    id: "e7",
-    name: "École Les Mouettes",
-    city: "Ziguinchor",
-    type: "Établissement privé",
-    status: "active",
-    students: 238,
-    teachers: 16,
-    classes: 9,
-  },
-  {
-    id: "e8",
-    name: "Collège Sainte-Marie",
-    city: "Kaolack",
-    type: "Établissement privé",
-    status: "suspended",
-    students: 301,
-    teachers: 21,
-    classes: 12,
-    note: "Accès suspendu depuis le 28 sept.",
-  },
-  {
-    id: "e9",
-    name: "Groupe scolaire Bakel",
-    city: "Bakel",
-    type: "Établissement public",
-    status: "active",
-    students: 355,
-    teachers: 25,
-    classes: 14,
-  },
-  {
-    id: "e10",
-    name: "Collège Fouta",
-    city: "Matam",
-    type: "Établissement public",
-    status: "active",
-    students: 410,
-    teachers: 29,
-    classes: 16,
-  },
-];
+const truthy = (v: unknown) => v === true || v === 1 || v === "1";
+
+/** L'unique élément d'un ensemble, sinon null (aucun ou plusieurs : on ne devine pas) */
+const onlyOne = <T,>(set: Set<T> | undefined) => (set?.size === 1 ? [...set][0] : null);
+
+type Building = School & { activeYear: boolean; apiStatus: "" | Status; effectif: number };
+
+/**
+ * Établissements de la base : GET /etablissements, complété par ce qui y est rattaché
+ * (utilisateurs, années, classes, élèves). Regroupés par nom : la base donne parfois deux clés pour la même école.
+ */
+async function loadSchools(): Promise<School[]> {
+  const [etabs, users, annees, classes, eleves, salles] = await Promise.allSettled([
+    getEtablissements(),
+    getUtilisateurs(),
+    getAllAnnees(),
+    getClasses(),
+    getAllEleves(),
+    getSalles(),
+  ]);
+  if ([etabs, users, annees, classes].every((r) => r.status === "rejected")) {
+    throw new Error("Aucune source n'a répondu");
+  }
+  const ok = <T,>(r: PromiseSettledResult<T[]>): T[] => (r.status === "fulfilled" ? r.value : []);
+
+  const map = new Map<string, Building>();
+  const get = (name: string | undefined) => {
+    const id = normalize(name ?? "");
+    if (!id) return null;
+    let s = map.get(id);
+    if (!s) {
+      s = {
+        id,
+        name: name ?? "",
+        city: "",
+        type: "",
+        status: "pending",
+        students: 0,
+        personnel: 0,
+        classes: 0,
+        salles: 0,
+        activeYear: false,
+        apiStatus: "",
+        effectif: 0,
+      };
+      map.set(id, s);
+    }
+    return s;
+  };
+
+  // Clé d'établissement → établissement : classes et salles ne donnent souvent que la clé
+  const byKey = new Map<string, Building>();
+  const link = (key: string | undefined, s: Building | null) => {
+    if (key && s && !byKey.has(key)) byKey.set(key, s);
+  };
+  /** Par nom d'abord, sinon par clé */
+  const find = (name: string | undefined, key: string | undefined) =>
+    (name ? get(name) : null) ?? (key ? (byKey.get(key) ?? null) : null);
+
+  for (const e of ok(etabs)) {
+    const s = get(e.name);
+    if (!s) continue;
+    link(e.public_key, s);
+    s.city ||= e.city;
+    s.type ||= e.type;
+    s.apiStatus ||= e.status;
+  }
+  for (const u of ok(users)) {
+    const s = get(u.etablissement?.name);
+    if (!s) continue;
+    link(u.etablissement?.public_key, s);
+    if (u.roles?.personnel) s.personnel += 1;
+    s.type ||= u.etablissement?.type ?? "";
+  }
+  // Année → établissement, pour les classes qui ne donnent que leur année
+  const etabOfAnnee = new Map<string, Building>();
+  // Nom d'année (« 2026-2027 ») → établissements qui en ont une de ce nom
+  const etabsOfAnneeName = new Map<string, Set<Building>>();
+  for (const a of ok(annees)) {
+    const s = find(a.etab_name, a.etab_public_key);
+    if (!s) continue;
+    link(a.etab_public_key, s);
+    if (a.public_key) etabOfAnnee.set(a.public_key, s);
+    const n = normalize(a.name);
+    if (n) etabsOfAnneeName.set(n, (etabsOfAnneeName.get(n) ?? new Set()).add(s));
+    if (truthy(a.is_active) && !truthy(a.is_closed)) s.activeYear = true;
+  }
+  // Salles : comptées par établissement ; salle → établissement pour les classes
+  const etabOfSalle = new Map<string, Building>();
+  for (const x of ok(salles)) {
+    const s = find(x.etab_name, x.etab_public_key);
+    if (!s) continue;
+    link(x.etab_public_key, s);
+    s.salles += 1;
+    if (x.public_key) etabOfSalle.set(x.public_key, s);
+  }
+  let orphanClasses = 0;
+  for (const c of ok(classes)) {
+    const s =
+      find(c.etab_name, c.etab_key) ??
+      etabOfAnnee.get(c.annee_key) ??
+      etabOfSalle.get(c.salle_key) ??
+      onlyOne(etabsOfAnneeName.get(normalize(c.annee_name))) ??
+      null;
+    if (!s) {
+      orphanClasses += 1;
+      continue;
+    }
+    s.classes += 1;
+    s.effectif += c.effectif_actuel ?? c.total_effectif ?? 0;
+  }
+  if (__DEV__ && orphanClasses > 0) {
+    console.log(`Établissements : ${orphanClasses} classe(s) sans établissement reconnu (la réponse de GET /classes ne donne pas leur établissement)`);
+  }
+  for (const e of ok(eleves)) {
+    const s = e.etab_name ? map.get(normalize(e.etab_name)) : undefined;
+    if (s) s.students += 1;
+  }
+
+  return [...map.values()]
+    .map(({ activeYear, apiStatus, effectif, ...s }): School => {
+      // Statut donné par la base ; sinon : actif s'il a une année scolaire en cours
+      const status: Status = apiStatus || (activeYear ? "active" : "pending");
+      return {
+        ...s,
+        // Élèves rattachés par GET /eleves, sinon l'effectif inscrit dans ses classes
+        students: Math.max(s.students, effectif),
+        type: typeEtablissementLabel(s.type),
+        status,
+        note:
+          status === "suspended"
+            ? "Accès suspendu"
+            : status === "pending" && !apiStatus
+              ? "Aucune année scolaire active"
+              : undefined,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, "fr"));
+}
 
 const STATUS = {
   active: { label: "Actif", badge: "bg-green-100", text: "text-green-700" },
@@ -143,31 +186,55 @@ const STATUS = {
 
 export default function Ecoles() {
   const insets = useSafeAreaInsets();
-  const [schools, setSchools] = useState(INITIAL_SCHOOLS);
+  const [schools, setSchools] = useState<School[]>([]);
+  const [loadState, setLoadState] = useState<"loading" | "refreshing" | "idle" | "failed">("loading");
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | Status>("all");
+  const lastRequest = useRef(0);
 
+  const load = useCallback(async (next: "loading" | "refreshing" | "silent") => {
+    const request = ++lastRequest.current;
+    if (next !== "silent") setLoadState(next);
+    try {
+      const list = await loadSchools();
+      if (request !== lastRequest.current) return; // une requête plus récente a pris le relais
+      setSchools(list);
+      setLoadState("idle");
+    } catch {
+      if (request === lastRequest.current && next !== "silent") setLoadState("failed");
+    }
+  }, []);
+
+  useEffect(() => {
+    load("loading");
+    return () => {
+      lastRequest.current++; // écran quitté : la réponse en cours est ignorée
+    };
+  }, [load]);
+
+  // Retour sur l'onglet : la liste se met à jour sans indicateur
+  const focusedOnce = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (focusedOnce.current) load("silent");
+      focusedOnce.current = true;
+    }, [load]),
+  );
+
+  const loading = loadState === "loading";
   const countOf = (s: Status) => schools.filter((x) => x.status === s).length;
 
   const totalStudents = schools.reduce((sum, s) => sum + s.students, 0);
-  const totalTeachers = schools.reduce((sum, s) => sum + s.teachers, 0);
+  const totalPersonnel = schools.reduce((sum, s) => sum + s.personnel, 0);
 
   const filtered = useMemo(() => {
     const q = normalize(query);
     return schools.filter((s) => {
       const matchesFilter = filter === "all" || s.status === filter;
-      const matchesQuery =
-        !q || normalize(s.name).includes(q) || normalize(s.city).includes(q);
+      const matchesQuery = !q || normalize(`${s.name} ${s.city} ${s.type}`).includes(q);
       return matchesFilter && matchesQuery;
     });
   }, [schools, query, filter]);
-
-  const validate = (id: string) =>
-    setSchools((prev) =>
-      prev.map((s) =>
-        s.id === id ? { ...s, status: "active", note: undefined } : s,
-      ),
-    );
 
   return (
     <View className="flex-1 bg-page">
@@ -180,6 +247,14 @@ export default function Ecoles() {
         }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={loadState === "refreshing"}
+            onRefresh={() => load("refreshing")}
+            tintColor="#2B5EA8"
+            colors={["#2B5EA8"]}
+          />
+        }
       >
         <View className="w-full max-w-[640px] gap-4 self-center px-5">
           {/* Titre + bouton d'ajout */}
@@ -199,45 +274,59 @@ export default function Ecoles() {
 
           {/* Résumé */}
           <View className="flex-row rounded-3xl bg-white py-4 shadow-sm">
-            <Summary value={String(schools.length)} label="Établissements" />
-            <Summary value={fmt(totalStudents)} label="Élèves" bordered />
-            <Summary value={fmt(totalTeachers)} label="Enseignants" bordered />
+            <Summary value={loading ? "…" : String(schools.length)} label="Établissements" />
+            <Summary value={loading ? "…" : fmt(totalStudents)} label="Élèves" bordered />
+            <Summary value={loading ? "…" : fmt(totalPersonnel)} label="Personnel" bordered />
           </View>
 
           {/* Recherche + filtres */}
           <SearchBar
             value={query}
             onChangeText={setQuery}
-            placeholder="Rechercher une école ou une ville"
+            placeholder="Rechercher un établissement ou une ville"
           />
           <FilterChips
             selected={filter}
             onSelect={(k) => setFilter(k as "all" | Status)}
             chips={[
-              { key: "all", label: "Toutes", count: schools.length },
-              { key: "active", label: "Actives", count: countOf("active") },
+              { key: "all", label: "Tous", count: schools.length },
+              { key: "active", label: "Actifs", count: countOf("active") },
               { key: "pending", label: "À valider", count: countOf("pending") },
               {
                 key: "suspended",
-                label: "Suspendues",
+                label: "Suspendus",
                 count: countOf("suspended"),
               },
             ]}
           />
 
           <Text className="font-inter text-xs text-muted">
-            {filtered.length} résultat{filtered.length > 1 ? "s" : ""}
+            {loading
+              ? "Chargement…"
+              : `${filtered.length} résultat${filtered.length > 1 ? "s" : ""}`}
           </Text>
 
           {/* Liste */}
-          {filtered.length === 0 ? (
+          {loading ? (
+            <SkeletonList />
+          ) : loadState === "failed" ? (
+            <View className="items-center gap-3 rounded-3xl bg-white py-12">
+              <Ionicons name="cloud-offline-outline" size={28} color="#9AA7B8" />
+              <Text className="font-inter-semibold text-[15px] text-ink">
+                Impossible de charger les établissements
+              </Text>
+              <Pressable onPress={() => load("loading")} className="active:opacity-70">
+                <Text className="font-inter-semibold text-[14px] text-primary">Réessayer</Text>
+              </Pressable>
+            </View>
+          ) : filtered.length === 0 ? (
             <View className="items-center gap-2 rounded-3xl bg-white py-12">
               <Ionicons name="search-outline" size={28} color="#9AA7B8" />
               <Text className="font-inter-semibold text-[15px] text-ink">
                 Aucun établissement trouvé
               </Text>
               <Text className="font-inter text-[13px] text-muted">
-                Essaie un autre nom ou un autre filtre.
+                Essayez un autre nom ou un autre filtre.
               </Text>
             </View>
           ) : (
@@ -267,7 +356,7 @@ export default function Ecoles() {
                         numberOfLines={1}
                         className="font-inter text-xs text-muted"
                       >
-                        {s.city} · {s.type}
+                        {[s.city, s.type].filter(Boolean).join(" · ")}
                       </Text>
                     </View>
                     <View className={`rounded-full px-3 py-1 ${st.badge}`}>
@@ -281,37 +370,20 @@ export default function Ecoles() {
 
                   <View className="h-px bg-line" />
 
-                  {s.status === "pending" ? (
-                    <View className="gap-3">
-                      <Text className="font-inter text-[13px] text-[#7A5F00]">
-                        {s.note}
-                      </Text>
-                      <Pressable
-                        onPress={() => validate(s.id)}
-                        className="h-11 flex-row items-center justify-center gap-2 rounded-2xl bg-primary active:opacity-80"
-                      >
-                        <Text className="font-inter-semibold text-[14px] text-white">
-                          Valider le dossier
-                        </Text>
-                        <Ionicons name="checkmark" size={18} color="#FFFFFF" />
-                      </Pressable>
-                    </View>
-                  ) : (
-                    <>
-                      <View className="flex-row">
-                        <Metric value={fmt(s.students)} label="Élèves" />
-                        <Metric
-                          value={String(s.teachers)}
-                          label="Enseignants"
-                        />
-                        <Metric value={String(s.classes)} label="Classes" />
-                      </View>
-                      {s.note && (
-                        <Text className="font-inter text-[13px] text-red-600">
-                          {s.note}
-                        </Text>
-                      )}
-                    </>
+                  <View className="flex-row">
+                    <Metric value={fmt(s.students)} label="Élèves" />
+                    <Metric value={String(s.personnel)} label="Personnel" />
+                    <Metric value={String(s.classes)} label="Classes" />
+                    <Metric value={String(s.salles)} label="Salles" />
+                  </View>
+                  {s.note && (
+                    <Text
+                      className={`font-inter text-[13px] ${
+                        s.status === "suspended" ? "text-red-600" : "text-[#7A5F00]"
+                      }`}
+                    >
+                      {s.note}
+                    </Text>
                   )}
                 </Pressable>
               );
