@@ -2,11 +2,12 @@ import { Effectifs, eleveName, lastEffectifs, loadEffectifs, SANS_CLASSE } from 
 import FixedHeader from "@/components/ui/FixedHeader";
 import SearchBar from "@/components/ui/SearchBar";
 import { SkeletonList } from "@/components/ui/Skeleton";
+import { fictiveCount, fictiveEleves } from "@/data/fictiveEleves";
 import { initials, normalize } from "@/utils/text";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { FlatList, Pressable, Text, View } from "react-native";
 
 const plural = (n: number) => (n > 1 ? "s" : "");
@@ -39,9 +40,20 @@ export default function EffectifsClasse() {
 
   const unassigned = key === SANS_CLASSE;
   const stat = unassigned ? null : data?.classes.find((c) => c.classe.public_key === key);
-  const students = unassigned ? (data?.unassigned ?? []) : (stat?.students ?? []);
-  const count = unassigned ? students.length : (stat?.count ?? 0);
+  const realStudents = unassigned ? (data?.unassigned ?? []) : (stat?.students ?? []);
   const capacity = stat?.capacity ?? 0;
+
+  // Données fictives : tant que la base ne relie aucun élève à la classe, une liste d'exemple est affichée
+  const fictive = !unassigned && !!stat && realStudents.length === 0;
+  const fictiveList = useMemo(
+    () =>
+      fictive && stat
+        ? fictiveEleves(stat.classe.public_key, stat.classe.name, stat.classe.niveau_name, fictiveCount(stat.count, capacity))
+        : [],
+    [fictive, stat, capacity],
+  );
+  const students = fictive ? fictiveList : realStudents;
+  const count = fictive ? students.length : unassigned ? students.length : (stat?.count ?? 0);
   const hidden = count - students.length; // comptés sur la classe sans être dans la liste des élèves
 
   const girls = students.filter((s) => s.gender === "F").length;
@@ -79,6 +91,11 @@ export default function EffectifsClasse() {
               {status === "loading" ? "Chargement…" : detail || " "}
             </Text>
           </View>
+          {fictive && (
+            <View className="rounded-full bg-[#FFF1A8] px-2.5 py-1">
+              <Text className="font-inter-semibold text-[11px] text-[#7A5F00]">Fictif</Text>
+            </View>
+          )}
         </View>
 
         {/* Résumé de la classe */}
