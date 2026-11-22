@@ -47,6 +47,7 @@ export default function AdminLayout() {
         <Tabs.Screen
           name="effectifs"
           options={{
+            popToTopOnBlur: true, // en revenant sur l'onglet : les effectifs, pas la dernière classe ouverte
             title: "Effectifs",
             tabBarIcon: icon("people-outline", "people"),
           }}
