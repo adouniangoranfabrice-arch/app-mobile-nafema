@@ -41,7 +41,7 @@ const todayNumber = () => {
 const truthy = (v: unknown) => v === true || v === 1 || v === "1";
 
 /** L'année active (sinon celle qui contient aujourd'hui, sinon la plus récente) */
-function currentYear(annees: Annee[]) {
+export function currentYear(annees: Annee[]) {
   const today = todayNumber();
   return (
     annees.find((a) => truthy(a.is_active) && !truthy(a.is_closed)) ??
@@ -52,7 +52,7 @@ function currentYear(annees: Annee[]) {
 }
 
 /** Garde les éléments de l'année ; si aucun ne correspond (noms différents), on garde tout */
-function ofYear<T extends { annee_name: string }>(items: T[], year: Annee | null) {
+export function ofYear<T extends { annee_name: string }>(items: T[], year: Annee | null) {
   if (!year) return items;
   const mine = items.filter((x) => normalize(x.annee_name) === normalize(year.name));
   return mine.length > 0 ? mine : items;
