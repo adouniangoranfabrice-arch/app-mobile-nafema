@@ -1,4 +1,4 @@
-import { Card, Fill, Split, Tile } from "@/components/PlatformStats";
+import { Card, Fill, Split, Tile, Tone, TONES } from "@/components/PlatformStats";
 import { MotionView, PressScale, Reveal } from "@/components/ui/MotionView";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { fcfa } from "@/data/finances";
@@ -9,9 +9,9 @@ import {
   usePlatformDashboard,
 } from "@/hooks/use-platform-dashboard";
 import { useReveal } from "@/hooks/use-reveal";
-import { initials } from "@/utils/text";
+import { initials, normalize } from "@/utils/text";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { Href } from "expo-router";
+import { Href, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { ReactNode, useEffect } from "react";
 import {
@@ -34,6 +34,7 @@ type IconName = keyof typeof Ionicons.glyphMap;
 
 const SCHOOL_TYPES: Record<string, string> = {
   PRIVE: "Privé",
+  SEMI_PRIVE: "Semi-privé",
   PUBLIC: "Public",
 };
 
@@ -55,11 +56,12 @@ const gestion = (screen: string) => `/(superadmin)/gestion/${screen}` as Href;
 /**
  * Accueil du super admin. Vraies données : services API, établissements (reconstitués à partir des
  * utilisateurs, années, classes, salles), utilisateurs, élèves, DRENA, IEPP, classes, salles, niveaux,
- * cycles, séries, frais. Encore fictives (marquées « Fictif ») : demandes à traiter, connexions de la semaine.
+ * cycles, séries, frais, inscriptions. Encore fictives (marquées « Fictif ») : connexions de la semaine.
  */
 export default function PlatformHome() {
   const signOut = useLogout();
   const go = useGo();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { revealed, scrollProps, track } = useReveal();
   const { data, status, reload } = usePlatformDashboard();
@@ -79,13 +81,27 @@ export default function PlatformHome() {
   const activeSchools = etabs.filter((e) => e.active).length;
   const publics = etabs.filter((e) => e.type === "PUBLIC").length;
   const prives = etabs.filter((e) => e.type === "PRIVE").length;
+  const semiPrives = etabs.filter((e) => e.type === "SEMI_PRIVE").length;
 
   const users = data?.utilisateurs ?? null;
   const personnels = users?.filter((u) => u.roles?.personnel).length ?? 0;
   const parents = users?.filter((u) => u.roles?.parent).length ?? 0;
 
   const eleves = data?.eleves ?? null;
-  const students = eleves?.length ?? FICTIF_PLATEFORME.students;
+  const inscriptions = data?.inscriptions ?? null;
+  // Sans liste d'élèves, les inscriptions donnent le nombre d'élèves ; sinon chiffre de démonstration
+  const students = eleves?.length ?? inscriptions?.length ?? FICTIF_PLATEFORME.students;
+  const studentsFictif = !eleves && !inscriptions;
+  const isStatus = (i: { statut: string }, re: RegExp) => re.test(normalize(i.statut));
+  const preinscrits = inscriptions?.filter((i) => isStatus(i, /preinscri/)).length ?? 0;
+  const inscrits = inscriptions?.filter((i) => isStatus(i, /^inscri/)).length ?? 0;
+  const nouvelles = inscriptions?.filter((i) => i.type.startsWith("NOUV")).length ?? 0;
+  const reinscriptions = inscriptions?.filter((i) => i.type.startsWith("REINS")).length ?? 0;
+  const sansClasse = inscriptions?.filter((i) => !i.classe_name).length ?? 0;
+
+  const pendingSchools = etabs.filter((e) => e.status === "pending").length;
+  const suspendedSchools = etabs.filter((e) => e.status === "suspended").length;
+  const noYearSchools = etabs.length - activeSchools;
   const girls = eleves?.filter((e) => e.gender === "F").length ?? 0;
   const boys = eleves?.filter((e) => e.gender === "M").length ?? 0;
 
@@ -97,28 +113,56 @@ export default function PlatformHome() {
       minute: "2-digit",
     }) ?? "";
 
+  // À traiter : vraies données ; seules les lignes non nulles sont affichées
   const requests: {
     id: string;
     count: number;
     label: string;
     detail: string;
     icon: IconName;
+    onPress: () => void;
   }[] = [
     {
-      id: "q1",
-      count: FICTIF_PLATEFORME.pendingSchools,
-      label: `établissement${plural(FICTIF_PLATEFORME.pendingSchools)} à valider`,
-      detail: "Demandes reçues · fictif",
-      icon: "business-outline",
+      id: "pending",
+      count: pendingSchools,
+      label: `établissement${plural(pendingSchools)} en attente de validation`,
+      detail: "Statut « en attente » dans la base",
+      icon: "business-outline" as IconName,
+      onPress: () => go("/(superadmin)/ecoles" as Href),
     },
     {
-      id: "q2",
-      count: FICTIF_PLATEFORME.reports,
-      label: `signalement${plural(FICTIF_PLATEFORME.reports)} à examiner`,
-      detail: "Accès utilisateur · fictif",
-      icon: "shield-outline",
+      id: "preinscrits",
+      count: preinscrits,
+      label: `préinscription${plural(preinscrits)} à valider`,
+      detail: "Inscriptions non encore validées",
+      icon: "document-text-outline" as IconName,
+      onPress: () => go(gestion("inscriptions")),
     },
-  ];
+    {
+      id: "sans-classe",
+      count: sansClasse,
+      label: `inscrit${plural(sansClasse)} sans classe`,
+      detail: "Élèves à affecter à une classe",
+      icon: "people-outline" as IconName,
+      onPress: () => go(gestion("inscriptions")),
+    },
+    {
+      id: "sans-annee",
+      count: noYearSchools,
+      label: `établissement${plural(noYearSchools)} sans année ouverte`,
+      detail: "Aucune année scolaire active",
+      icon: "calendar-outline" as IconName,
+      onPress: () => go(gestion("annees")),
+    },
+    {
+      id: "suspendus",
+      count: suspendedSchools,
+      label: `établissement${plural(suspendedSchools)} suspendu${plural(suspendedSchools)}`,
+      detail: "Accès à la plateforme bloqué",
+      icon: "shield-outline" as IconName,
+      onPress: () => go("/(superadmin)/ecoles" as Href),
+    },
+  ].filter((r) => r.count > 0);
 
   // Connexions fictives : le dernier jour est aujourd'hui
   const week = FICTIF_PLATEFORME.week;
@@ -238,12 +282,19 @@ export default function PlatformHome() {
                 delay={2 * STEP_MS}
                 value={v(String(etabs.length))}
                 icon={
-                  <Ionicons name="business-outline" size={20} color="#6B7A90" />
+                  <Ionicons name="business-outline" size={20} color={TONES.blue.fg} />
                 }
                 label="Établissements"
+                tone="blue"
                 sub={
-                  publics + prives > 0
-                    ? `${publics} public${plural(publics)} · ${prives} privé${plural(prives)}`
+                  publics + prives + semiPrives > 0
+                    ? [
+                        `${publics} public${plural(publics)}`,
+                        `${prives} privé${plural(prives)}`,
+                        semiPrives > 0 ? `${semiPrives} semi-privé${plural(semiPrives)}` : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")
                     : "D'après les données"
                 }
               />
@@ -252,9 +303,10 @@ export default function PlatformHome() {
                 delay={3 * STEP_MS}
                 value={v(users ? fmt(users.length) : "—")}
                 icon={
-                  <Ionicons name="people-outline" size={20} color="#6B7A90" />
+                  <Ionicons name="people-outline" size={20} color={TONES.violet.fg} />
                 }
                 label="Utilisateurs"
+                tone="violet"
                 sub={
                   users
                     ? `${personnels} personnel${plural(personnels)} · ${parents} parent${plural(parents)}`
@@ -269,26 +321,30 @@ export default function PlatformHome() {
                 delay={4 * STEP_MS}
                 value={v(fmt(students))}
                 icon={
-                  <Ionicons name="school-outline" size={20} color="#6B7A90" />
+                  <Ionicons name="school-outline" size={20} color={TONES.green.fg} />
                 }
                 label="Élèves"
+                tone="green"
                 sub={
                   eleves
                     ? girls + boys > 0
                       ? `${girls} fille${plural(girls)} · ${boys} garçon${plural(boys)}`
                       : `${fmt(data?.placesClasses ?? 0)} places en classe`
-                    : "Liste des élèves indisponible"
+                    : inscriptions
+                      ? `D'après ${fmt(inscriptions.length)} inscription${plural(inscriptions.length)}`
+                      : "Liste des élèves indisponible"
                 }
-                fictif={!loading && !eleves}
+                fictif={!loading && studentsFictif}
               />
               <StatCard
                 start={revealed("cards")}
                 delay={5 * STEP_MS}
                 value={v(`${percent(activeSchools, etabs.length)} %`)}
                 icon={
-                  <Ionicons name="pulse-outline" size={20} color="#6B7A90" />
+                  <Ionicons name="pulse-outline" size={20} color={TONES.orange.fg} />
                 }
                 label="Établissements actifs"
+                tone="orange"
                 sub={`${activeSchools} sur ${etabs.length} avec une année ouverte`}
               />
             </View>
@@ -311,18 +367,21 @@ export default function PlatformHome() {
                   start={revealed("stats") && !loading}
                   value={data?.drenas ?? 0}
                   label="DRENA"
+                  tone="teal"
                   icon="map-outline"
                 />
                 <Tile
                   start={revealed("stats") && !loading}
                   value={data?.iepps ?? 0}
                   label="IEPP"
+                  tone="indigo"
                   icon="git-branch-outline"
                 />
                 <Tile
                   start={revealed("stats") && !loading}
                   value={data?.annees.length ?? 0}
                   label="Années"
+                  tone="amber"
                   icon="calendar-outline"
                 />
               </View>
@@ -331,21 +390,46 @@ export default function PlatformHome() {
                   start={revealed("stats") && !loading}
                   value={data?.classes.length ?? 0}
                   label="Classes"
+                  tone="pink"
                   icon="school-outline"
                 />
                 <Tile
                   start={revealed("stats") && !loading}
                   value={data?.salles.length ?? 0}
                   label="Salles"
+                  tone="orange"
                   icon="easel-outline"
                 />
                 <Tile
                   start={revealed("stats") && !loading}
                   value={data?.niveaux ?? 0}
                   label="Niveaux"
+                  tone="violet"
                   icon="layers-outline"
                 />
               </View>
+
+              {inscriptions && (
+                <Pressable onPress={() => go(gestion("inscriptions"))} className="active:opacity-80">
+                  <Card title="Inscriptions">
+                    <View className="flex-row items-end justify-between gap-3">
+                      <Text className="font-inter-bold text-[22px] text-primary">
+                        {fmt(inscriptions.length)}
+                      </Text>
+                      <Text className="font-inter text-[13px] text-muted">
+                        {inscrits} validée{plural(inscrits)} · {preinscrits} préinscrit{plural(preinscrits)}
+                      </Text>
+                    </View>
+                    {nouvelles + reinscriptions > 0 && (
+                      <Split
+                        start={revealed("stats") && !loading}
+                        a={{ label: "Nouvelles", value: nouvelles }}
+                        b={{ label: "Réinscriptions", value: reinscriptions }}
+                      />
+                    )}
+                  </Card>
+                </Pressable>
+              )}
 
               {eleves && girls + boys > 0 && (
                 <Card title="Répartition des élèves">
@@ -357,12 +441,13 @@ export default function PlatformHome() {
                 </Card>
               )}
 
-              {publics + prives > 0 && (
+              {publics + prives + semiPrives > 0 && (
                 <Card title="Types d'établissements">
                   <Split
                     start={revealed("stats") && !loading}
                     a={{ label: "Publics", value: publics }}
                     b={{ label: "Privés", value: prives }}
+                    c={{ label: "Semi-privés", value: semiPrives }}
                   />
                 </Card>
               )}
@@ -412,12 +497,14 @@ export default function PlatformHome() {
                   start={revealed("stats") && !loading}
                   value={data?.placesClasses ?? 0}
                   label="Places en classe"
+                  tone="blue"
                   icon="people-outline"
                 />
                 <Tile
                   start={revealed("stats") && !loading}
                   value={data?.placesSalles ?? 0}
                   label="Places en salle"
+                  tone="green"
                   icon="grid-outline"
                 />
               </View>
@@ -453,14 +540,31 @@ export default function PlatformHome() {
                 onPress={() => go(gestion("index"))}
               />
               <View className="gap-4 rounded-3xl bg-[#FFF6BF] p-4">
-                {requests.map((r, i) => (
+                {loading ? (
+                  <View className="gap-3">
+                    <Skeleton width="80%" height={14} />
+                    <Skeleton width="60%" height={14} />
+                  </View>
+                ) : requests.length === 0 ? (
+                  <View className="flex-row items-center gap-3">
+                    <Ionicons name="checkmark-circle-outline" size={22} color="#15803D" />
+                    <Text className="flex-1 font-inter-semibold text-[14px] text-ink">
+                      Rien à traiter pour le moment.
+                    </Text>
+                  </View>
+                ) : null}
+                {!loading && requests.map((r, i) => (
                   <Reveal
                     key={r.id}
                     start={revealed("requests")}
                     delay={(i + 1) * STEP_MS}
                   >
                     {i > 0 && <View className="mb-4 h-px bg-[#E6DC8F]" />}
-                    <View className="flex-row items-center gap-3">
+                    <Pressable
+                      onPress={r.onPress}
+                      accessibilityRole="button"
+                      className="flex-row items-center gap-3 active:opacity-70"
+                    >
                       <View className="h-11 w-11 items-center justify-center rounded-xl bg-white">
                         <Ionicons name={r.icon} size={20} color="#2B5EA8" />
                       </View>
@@ -472,7 +576,8 @@ export default function PlatformHome() {
                           {r.detail}
                         </Text>
                       </View>
-                    </View>
+                      <Ionicons name="chevron-forward" size={18} color="#7A5F00" />
+                    </Pressable>
                   </Reveal>
                 ))}
               </View>
@@ -499,9 +604,18 @@ export default function PlatformHome() {
                   </Text>
                 ) : (
                   etabs.slice(0, 5).map((s, i) => (
-                    <View
-                      key={s.name}
-                      className={`flex-row items-center gap-3 py-3.5 ${i > 0 ? "border-t border-line" : ""}`}
+                    <Pressable
+                      key={s.public_key || s.name}
+                      disabled={!s.public_key}
+                      onPress={() =>
+                        router.push({
+                          pathname: "/(superadmin)/ecoles/etablissement-detail",
+                          params: { public_key: s.public_key, name: s.name },
+                        } as unknown as Href)
+                      }
+                      accessibilityRole="button"
+                      accessibilityLabel={s.name}
+                      className={`flex-row items-center gap-3 py-3.5 active:opacity-70 ${i > 0 ? "border-t border-line" : ""}`}
                     >
                       <View className="h-11 w-11 items-center justify-center rounded-xl bg-soft">
                         <Ionicons
@@ -523,6 +637,7 @@ export default function PlatformHome() {
                         >
                           {[
                             SCHOOL_TYPES[s.type] ?? s.type,
+                            s.city,
                             `${s.classes} classe${plural(s.classes)}`,
                             `${s.users} utilisateur${plural(s.users)}`,
                           ]
@@ -530,16 +645,8 @@ export default function PlatformHome() {
                             .join(" · ")}
                         </Text>
                       </View>
-                      <View
-                        className={`rounded-full px-3 py-1 ${s.active ? "bg-green-100" : "bg-[#FFF1A8]"}`}
-                      >
-                        <Text
-                          className={`font-inter-semibold text-xs ${s.active ? "text-green-700" : "text-[#7A5F00]"}`}
-                        >
-                          {s.active ? "Actif" : "Sans année"}
-                        </Text>
-                      </View>
-                    </View>
+                      <SchoolBadge status={s.status} active={s.active} />
+                    </Pressable>
                   ))
                 )}
               </View>
@@ -636,6 +743,23 @@ export default function PlatformHome() {
 
 /* ---------- Petits composants ---------- */
 
+/** Statut d'un établissement : celui de la base d'abord, sinon d'après son année scolaire */
+function SchoolBadge({ status, active }: { status: string; active: boolean }) {
+  const [label, bg, fg] =
+    status === "pending"
+      ? ["En attente", "bg-[#FFF1A8]", "text-[#7A5F00]"]
+      : status === "suspended"
+        ? ["Suspendu", "bg-red-100", "text-red-700"]
+        : active
+          ? ["Actif", "bg-green-100", "text-green-700"]
+          : ["Sans année", "bg-[#FFF1A8]", "text-[#7A5F00]"];
+  return (
+    <View className={`rounded-full px-3 py-1 ${bg}`}>
+      <Text className={`font-inter-semibold text-xs ${fg}`}>{label}</Text>
+    </View>
+  );
+}
+
 /** Une colonne de l'histogramme, qui monte depuis la base quand la section est visible */
 function Column({
   start,
@@ -699,9 +823,11 @@ function StatCard({
   sub,
   fictif,
   onPress,
+  tone,
 }: {
   start: boolean;
   delay: number;
+  tone: Tone;
   /** null : en chargement */
   value: string | null;
   icon: ReactNode;
@@ -710,29 +836,39 @@ function StatCard({
   fictif?: boolean;
   onPress?: () => void;
 }) {
+  const t = TONES[tone];
   return (
     <Reveal start={start} delay={delay} style={{ flex: 1 }}>
       <Pressable
         onPress={onPress}
         disabled={!onPress}
-        className="grow rounded-3xl bg-white p-4 shadow-sm active:opacity-80"
+        className="grow rounded-3xl p-4 shadow-sm active:opacity-80"
+        style={{ backgroundColor: t.bg }}
       >
         <View className="flex-row items-start justify-between">
           {value === null ? (
             <Skeleton width={64} height={32} />
           ) : (
-            <Text className="font-inter-bold text-[32px] leading-9 text-primary">
+            <Text
+              className="font-inter-bold text-[32px] leading-9"
+              style={{ color: t.fg }}
+            >
               {value}
             </Text>
           )}
-          {icon}
+          <View
+            className="h-9 w-9 items-center justify-center rounded-xl"
+            style={{ backgroundColor: t.chip }}
+          >
+            {icon}
+          </View>
         </View>
         <View className="mt-3 flex-row items-center gap-1.5">
           <Text className="font-inter-semibold text-[14px] text-ink">
             {label}
           </Text>
           {fictif && (
-            <View className="rounded-full bg-soft px-1.5 py-0.5">
+            <View className="rounded-full bg-white px-1.5 py-0.5">
               <Text className="font-inter-semibold text-[10px] text-muted">
                 Fictif
               </Text>

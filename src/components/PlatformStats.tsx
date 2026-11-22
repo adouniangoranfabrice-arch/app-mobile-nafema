@@ -18,6 +18,7 @@ const DURATION_MS = 700;
 // Palette vérifiée (daltonisme et contraste) sur fond blanc
 const SERIES_A = "#2B5EA8";
 const SERIES_B = "#C2610C";
+const SERIES_C = "#2E9E6B";
 
 const percent = (part: number, total: number) =>
   total > 0 ? Math.round((part / total) * 100) : 0;
@@ -182,21 +183,54 @@ export function Card({ title, children }: { title: string; children: ReactNode }
   );
 }
 
+/** Couleurs des cadres de chiffres : fond pastel, chiffre et icône foncés (contraste lisible) */
+export const TONES = {
+  blue: { fg: "#2B5EA8", bg: "#EAF1FB", chip: "#D6E4F7" },
+  violet: { fg: "#6D28D9", bg: "#F3EEFD", chip: "#E4D9FB" },
+  green: { fg: "#15803D", bg: "#EAF7EF", chip: "#D1EEDC" },
+  orange: { fg: "#B45309", bg: "#FFF4E6", chip: "#FDE4C4" },
+  teal: { fg: "#0F766E", bg: "#E7F6F4", chip: "#CBEDE8" },
+  indigo: { fg: "#4338CA", bg: "#EEF0FE", chip: "#DDE1FD" },
+  amber: { fg: "#A16207", bg: "#FEF8E4", chip: "#FCEDBF" },
+  pink: { fg: "#BE185D", bg: "#FDEEF5", chip: "#F9D9E8" },
+  red: { fg: "#B91C1C", bg: "#FDEDED", chip: "#F9D5D5" },
+} as const;
+export type Tone = keyof typeof TONES;
+
 export function Tile({
   start,
   value,
   label,
   icon,
+  tone,
 }: {
   start: boolean;
   value: number;
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
+  /** Couleur du cadre ; sans elle, cadre blanc */
+  tone?: Tone;
 }) {
+  const t = tone ? TONES[tone] : null;
   return (
-    <View className="flex-1 gap-2 rounded-2xl bg-white p-3.5 shadow-sm">
-      <Ionicons name={icon} size={18} color="#6B7A90" />
-      <Text className="font-inter-bold text-[24px] leading-7 text-primary">
+    <View
+      className="flex-1 gap-2 rounded-2xl bg-white p-3.5 shadow-sm"
+      style={t ? { backgroundColor: t.bg } : undefined}
+    >
+      {t ? (
+        <View
+          className="h-8 w-8 items-center justify-center rounded-lg"
+          style={{ backgroundColor: t.chip }}
+        >
+          <Ionicons name={icon} size={17} color={t.fg} />
+        </View>
+      ) : (
+        <Ionicons name={icon} size={18} color="#6B7A90" />
+      )}
+      <Text
+        className="font-inter-bold text-[24px] leading-7 text-primary"
+        style={t ? { color: t.fg } : undefined}
+      >
         <CountUp start={start} value={value} />
       </Text>
       <Text numberOfLines={1} className="font-inter text-xs text-muted">
@@ -283,17 +317,25 @@ export function Meter({
   );
 }
 
-/** Une répartition en deux parts, avec sa légende */
+/** Une répartition en deux parts (ou trois avec `c`), avec sa légende */
 export function Split({
   start,
   a,
   b,
+  c,
 }: {
   start: boolean;
   a: { label: string; value: number };
   b: { label: string; value: number };
+  c?: { label: string; value: number };
 }) {
-  const total = a.value + b.value;
+  const parts = [
+    { ...a, color: SERIES_A },
+    { ...b, color: SERIES_B },
+    ...(c ? [{ ...c, color: SERIES_C }] : []),
+  ];
+  const total = parts.reduce((n, p) => n + p.value, 0);
+  const shown = parts.filter((p) => p.value > 0);
   const reveal = useSharedValue(0);
 
   useEffect(() => {
@@ -318,24 +360,20 @@ export function Split({
           style={[{ height: "100%", overflow: "hidden" }, revealStyle]}
         >
           <View className="h-full flex-row gap-0.5">
-            {a.value > 0 && (
+            {shown.map((p, i) => (
               <View
-                className="rounded-l"
-                style={{ flex: a.value, backgroundColor: SERIES_A }}
+                key={p.label}
+                className={`${i === 0 ? "rounded-l" : ""} ${i === shown.length - 1 ? "rounded-r" : ""}`}
+                style={{ flex: p.value, backgroundColor: p.color }}
               />
-            )}
-            {b.value > 0 && (
-              <View
-                className="rounded-r"
-                style={{ flex: b.value, backgroundColor: SERIES_B }}
-              />
-            )}
+            ))}
           </View>
         </Animated.View>
       </View>
       <View className="flex-row flex-wrap gap-x-5 gap-y-1">
-        <Legend color={SERIES_A} {...a} total={total} />
-        <Legend color={SERIES_B} {...b} total={total} />
+        {parts.map((p) => (
+          <Legend key={p.label} color={p.color} label={p.label} value={p.value} total={total} />
+        ))}
       </View>
     </View>
   );

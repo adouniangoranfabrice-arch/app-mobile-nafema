@@ -4,8 +4,10 @@ import { Classe, getClasses } from "@/api/classes";
 import { Cycle, getCycles } from "@/api/cycles";
 import { getAllDrens } from "@/api/drens";
 import { Eleve, getAllEleves } from "@/api/eleves";
+import { EtablissementApi, getEtablissements } from "@/api/etablissements";
 import { Frais, getFrais } from "@/api/frais";
 import { getIepps } from "@/api/iepps";
+import { getInscriptions, Inscription } from "@/api/inscriptions";
 import { getNiveaux, Niveau } from "@/api/niveaux";
 import { getSalles, Salle } from "@/api/salles";
 import { getSeries } from "@/api/series";
@@ -19,8 +21,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 export const FICTIF_PLATEFORME = {
   /** Élèves si GET /eleves ne répond pas */
   students: 8420,
-  pendingSchools: 2,
-  reports: 1,
   /** Connexions par jour (le dernier jour est aujourd'hui) */
   week: [336, 497, 242, 188, 578, 685, 754],
 };
@@ -28,7 +28,11 @@ export const FICTIF_PLATEFORME = {
 /* ---------- Types ---------- */
 
 export type Etablissement = {
+  public_key: string;
   name: string;
+  city: string;
+  /** Statut donné par GET /etablissements : active | pending | suspended | "" */
+  status: EtablissementApi["status"];
   /** PUBLIC | PRIVE | "" si inconnu */
   type: string;
   abbrev: string;
@@ -44,6 +48,9 @@ export type PlatformDashboard = {
   services: { ok: number; total: number; down: string[] };
   checkedAt: Date;
   etablissements: Etablissement[];
+  /** GET /etablissements a répondu (sinon la liste est reconstituée) */
+  etablissementsReels: boolean;
+  inscriptions: Inscription[] | null;
   utilisateurs: Utilisateur[] | null;
   eleves: Eleve[] | null;
   drenas: number | null;
@@ -63,34 +70,55 @@ export type PlatformDashboard = {
 
 /* ---------- Calculs ---------- */
 
+/** « public », « prive », « semi_prive », « Semi-privé »… → PUBLIC | PRIVE | SEMI_PRIVE */
+export function schoolType(raw: string) {
+  const t = normalize(raw).replace(/[^a-z]/g, "");
+  if (!t) return "";
+  if (t.startsWith("semi")) return "SEMI_PRIVE";
+  if (t.startsWith("pub")) return "PUBLIC";
+  if (t.startsWith("priv")) return "PRIVE";
+  return raw.toUpperCase();
+}
+
 const truthy = (v: unknown) => v === true || v === 1 || v === "1";
 
 /**
- * Les établissements, reconstitués à partir des utilisateurs, années, classes et salles
- * (pas encore d'endpoint /etablissements). Regroupés par nom : la base donne parfois deux clés pour la même école.
+ * Les établissements : ceux de GET /etablissements, complétés par les utilisateurs, années, classes et salles
+ * (et reconstitués à partir de ces données si la liste ne répond pas).
+ * Regroupés par nom : la base donne parfois deux clés pour la même école.
  */
 function buildEtablissements(
+  api: EtablissementApi[] | null,
   utilisateurs: Utilisateur[],
   annees: Annee[],
   classes: Classe[],
   salles: Salle[],
 ) {
   const map = new Map<string, Etablissement>();
-  const get = (name: string) => {
+  const get = (name: string, create = !api) => {
     const id = normalize(name);
     if (!id) return null;
     let e = map.get(id);
-    if (!e) {
-      e = { name, type: "", abbrev: "", users: 0, classes: 0, active: false };
+    if (!e && create) {
+      e = { public_key: "", name, city: "", status: "", type: "", abbrev: "", users: 0, classes: 0, active: false };
       map.set(id, e);
     }
-    return e;
+    return e ?? null;
   };
+  for (const a of api ?? []) {
+    const e = get(a.name, true);
+    if (!e) continue;
+    e.public_key ||= a.public_key;
+    e.type ||= schoolType(a.type);
+    e.abbrev ||= a.abbrev;
+    e.city ||= a.city;
+    e.status ||= a.status;
+  }
   for (const u of utilisateurs) {
     const e = u.etablissement && get(u.etablissement.name);
     if (!e) continue;
     e.users += 1;
-    e.type ||= u.etablissement?.type ?? "";
+    e.type ||= schoolType(u.etablissement?.type ?? "");
     e.abbrev ||= u.etablissement?.abbrev ?? "";
   }
   for (const a of annees) {
@@ -119,6 +147,8 @@ export function usePlatformDashboard() {
 
     const sources = {
       Profil: getMe(),
+      Établissements: getEtablissements(),
+      Inscriptions: getInscriptions(),
       Utilisateurs: getUtilisateurs(),
       Élèves: getAllEleves(),
       DRENA: getAllDrens(),
@@ -176,7 +206,15 @@ export function usePlatformDashboard() {
       user: val<User | null>("Profil", null),
       services: { ok: names.length - down.length, total: names.length, down },
       checkedAt: new Date(),
-      etablissements: buildEtablissements(utilisateurs ?? [], annees, classes, salles),
+      etablissements: buildEtablissements(
+        has("Établissements") ? val<EtablissementApi[]>("Établissements", []) : null,
+        utilisateurs ?? [],
+        annees,
+        classes,
+        salles,
+      ),
+      etablissementsReels: has("Établissements"),
+      inscriptions: has("Inscriptions") ? val<Inscription[]>("Inscriptions", []) : null,
       utilisateurs,
       eleves: has("Élèves") ? val<Eleve[]>("Élèves", []) : null,
       drenas: has("DRENA") ? val<unknown[]>("DRENA", []).length : null,
