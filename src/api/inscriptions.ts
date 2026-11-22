@@ -163,6 +163,8 @@ export async function createInscription(
       type: inscription.type_ins,
       statut: "EN_ATTENTE",
       date: localDateTime(now),
+      cree_le: localDateTime(now),
+      eleve_key: "",
       est_redoublant: inscription.redoublant,
       affectation: inscription.affectation,
       regime: inscription.regime_eleve,
@@ -206,7 +208,9 @@ export type Inscription = {
   annee_name: string;
   type: string; // NOUVELLE | REINSCRIPTION
   statut: string;
-  date: string; // date brute de l'API
+  date: string; // date d'inscription brute de l'API ("" tant que l'élève est préinscrit)
+  cree_le: string; // date de création, pour trier
+  eleve_key: string; // public_key de l'élève
   est_redoublant: boolean;
   affectation: string;
   regime: string;
@@ -236,6 +240,20 @@ type RawInscription = {
   eleve_firstname?: string;
   eleve_fullname?: string;
   eleve_matricule?: string;
+  eleve_nom?: string | null;
+  eleve_prenoms?: string | null;
+  eleve_public_key?: string | null;
+  annee_libelle?: string | null;
+  annee_public_key?: string | null;
+  classe_public_key?: string | null;
+  type_inscrip?: string | null;
+  inscrit_le?: string | null;
+  redouble?: boolean | number | string | null;
+  affecte?: string | null;
+  eleve_regim?: string | null;
+  decision_annuelle?: string | null;
+  niveau_actuel_libelle?: string | null;
+  sortie_le?: string | null;
   name?: string;
   firstname?: string;
   matricule?: string;
@@ -276,8 +294,8 @@ function toInscription(i: RawInscription): Inscription {
   const eleveName =
     i.eleve_fullname ??
     ([
-      i.eleve_name ?? i.name ?? eleve?.name,
-      i.eleve_firstname ?? i.firstname ?? eleve?.firstname ?? eleve?.prenoms,
+      i.eleve_nom ?? i.eleve_name ?? i.name ?? eleve?.name,
+      i.eleve_prenoms ?? i.eleve_firstname ?? i.firstname ?? eleve?.firstname ?? eleve?.prenoms,
     ]
       .filter(Boolean)
       .join(" ") ||
@@ -287,16 +305,19 @@ function toInscription(i: RawInscription): Inscription {
     eleve_name: eleveName,
     matricule: i.eleve_matricule ?? i.matricule ?? eleve?.matricule ?? "",
     classe_name: i.classe_name ?? refName(i.classe),
-    niveau_name: i.niveau_name ?? i.niveau_actuel_name ?? refName(i.niveau),
-    annee_name: i.annee_name ?? refName(i.annee),
+    niveau_name: i.niveau_actuel_libelle ?? i.niveau_name ?? i.niveau_actuel_name ?? refName(i.niveau),
+    annee_name: i.annee_libelle ?? i.annee_name ?? refName(i.annee),
     // « nouvelle » / « reinscription » → NOUVELLE / REINSCRIPTION, comme les filtres de la liste
-    type: (i.type_ins ?? i.type ?? i.type_inscription ?? "").toUpperCase(),
+    type: (i.type_inscrip ?? i.type_ins ?? i.type ?? i.type_inscription ?? "").toUpperCase(),
     statut: i.statut ?? i.status ?? "",
-    date: i.date_inscription ?? i.date ?? i.cree_le ?? i.created_at ?? "",
-    est_redoublant: yes(i.est_redoublant ?? i.redoublant),
-    affectation: i.affectation ?? "",
-    regime: i.regime_eleve ?? i.regime ?? "",
-    decision_fin_annee: i.decision_finale ?? i.decision_fin_annee ?? "",
+    // Comme sur le site : la date d'inscription reste vide (« — ») tant que l'inscription n'est pas validée
+    date: i.inscrit_le ?? i.date_inscription ?? i.date ?? "",
+    cree_le: i.cree_le ?? i.created_at ?? "",
+    eleve_key: i.eleve_public_key ?? eleve?.public_key ?? "",
+    est_redoublant: yes(i.redouble ?? i.est_redoublant ?? i.redoublant),
+    affectation: i.affecte ?? i.affectation ?? "",
+    regime: i.eleve_regim ?? i.regime_eleve ?? i.regime ?? "",
+    decision_fin_annee: i.decision_annuelle ?? i.decision_finale ?? i.decision_fin_annee ?? "",
     modifie_le: i.modifie_le ?? i.modifiee_le ?? i.updated_at ?? "",
   };
 }
@@ -328,20 +349,93 @@ export async function getInscriptions() {
   return raw.map(toInscription);
 }
 
+/** Une créance de l'élève (frais dû) : le format exact n'est pas encore connu, on lit les noms habituels */
+export type Creance = { key: string; name: string; montant: number; paye: number; reste: number; statut: string; echeance: string };
+
+type RawCreance = Record<string, unknown>;
+
+const num = (v: unknown) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+const str = (v: unknown) => (typeof v === "string" ? v : typeof v === "number" ? String(v) : "");
+
+function toCreance(c: RawCreance, index: number): Creance {
+  const montant = num(c.montant ?? c.montant_du ?? c.montant_frais ?? c.total);
+  const paye = num(c.paye ?? c.montant_paye ?? c.verse ?? c.montant_verse);
+  const reste = c.reste ?? c.solde ?? c.reste_a_payer ?? c.montant_restant;
+  return {
+    key: str(c.public_key) || String(index),
+    name: str(c.frais_name ?? c.frais_libelle ?? c.libelle ?? c.name) || "Frais",
+    montant,
+    paye,
+    reste: reste === undefined || reste === null ? Math.max(0, montant - paye) : num(reste),
+    statut: str(c.status ?? c.statut),
+    echeance: str(c.echeance ?? c.date_echeance ?? c.date_limite),
+  };
+}
+
+/** Détail d'une inscription (GET /inscriptions/{inscription}) : plus complet que la liste */
+export type InscriptionDetail = Inscription & {
+  type_paiement: string; // total | tranche
+  niveau_precedent: string;
+  sortie_le: string;
+  motif_sortie: string;
+  eleve_sexe: string; // M | F
+  eleve_birth_day: string; // « 2016-01-01 »
+  eleve_birth_of: string;
+  eleve_phone: string;
+  creances: Creance[];
+};
+
+type RawInscriptionDetail = RawInscription & {
+  mode_paie?: string | null;
+  type_paiement?: string | null;
+  niveau_precedant_libelle?: string | null;
+  motif_sort?: string | null;
+  eleve_sexe?: string | null;
+  eleve_birth_day?: string | null;
+  eleve_birth_of?: string | null;
+  eleve_phone?: string | null;
+  creances?: RawCreance[] | null;
+};
+
 /** Une inscription. La réponse peut être enveloppée dans { data } ou non */
-export async function getInscription(publicKey: string) {
+export async function getInscription(publicKey: string): Promise<InscriptionDetail> {
   if (INSCRIPTIONS_FICTIVES) {
     await pause(200);
     const found = fictives.find((i) => i.public_key === publicKey);
     if (!found) throw new Error("Inscription introuvable");
-    return { ...found };
+    return {
+      ...found,
+      type_paiement: "",
+      niveau_precedent: "",
+      sortie_le: "",
+      motif_sortie: "",
+      eleve_sexe: "",
+      eleve_birth_day: "",
+      eleve_birth_of: "",
+      eleve_phone: "",
+      creances: [],
+    };
   }
-  const { data } = await api.get<{ data?: RawInscription } & RawInscription>(
+  const { data } = await api.get<{ data?: RawInscriptionDetail } & RawInscriptionDetail>(
     `/inscriptions/${encodeURIComponent(publicKey)}`,
   );
-  const raw = (data?.data ?? data) as RawInscription;
-  if (__DEV__) console.log("Inscription reçue (détail) :", raw); // pour caler les champs
-  return toInscription({ ...raw, public_key: raw?.public_key ?? publicKey });
+  const raw = (data?.data ?? data) as RawInscriptionDetail;
+  if (__DEV__) console.log("Inscription reçue (détail) :", JSON.stringify(raw)); // pour caler les champs
+  return {
+    ...toInscription({ ...raw, public_key: raw?.public_key ?? publicKey }),
+    type_paiement: raw.mode_paie ?? raw.type_paiement ?? "",
+    niveau_precedent: raw.niveau_precedant_libelle ?? "",
+    sortie_le: raw.sortie_le ?? "",
+    motif_sortie: raw.motif_sort ?? "",
+    eleve_sexe: (raw.eleve_sexe ?? "").trim().toUpperCase().slice(0, 1),
+    eleve_birth_day: raw.eleve_birth_day ?? "",
+    eleve_birth_of: raw.eleve_birth_of ?? "",
+    eleve_phone: raw.eleve_phone ?? "",
+    creances: (raw.creances ?? []).map(toCreance),
+  };
 }
 
 /** Supprime une inscription (DELETE /inscriptions/{inscription}) */
@@ -409,6 +503,8 @@ const exemple = (
   classe_name,
   niveau_name,
   annee_name: "2026-2027",
+  cree_le: date,
+  eleve_key: "",
   type,
   statut,
   date,

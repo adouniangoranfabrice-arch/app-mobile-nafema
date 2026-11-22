@@ -56,7 +56,7 @@ export default function Inscriptions() {
       const all = await getInscriptions();
       if (request !== lastRequest.current) return; // une requête plus récente a pris le relais
       // Les plus récentes d'abord
-      all.sort((a, b) => b.date.localeCompare(a.date));
+      all.sort((a, b) => (b.cree_le || b.date).localeCompare(a.cree_le || a.date));
       setInscriptions(all);
       setStatus("idle");
     } catch {
