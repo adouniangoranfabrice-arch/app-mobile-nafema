@@ -1,4 +1,4 @@
-import { Annee, getAllAnnees } from "@/api/annees";
+import { Annee, anneeStatus, getAllAnnees } from "@/api/annees";
 import { apiErrorMessage } from "@/api/client";
 import { Cycle, getCycles } from "@/api/cycles";
 import { Periode, PeriodeData } from "@/api/periodes";
@@ -6,10 +6,11 @@ import CheckboxRow from "@/components/ui/CheckboxRow";
 import DateField from "@/components/ui/DateField";
 import { FormSheet, SheetModal } from "@/components/ui/FormSheet";
 import Input from "@/components/ui/Input";
-import Select from "@/components/ui/Select";
+import Select, { Option } from "@/components/ui/Select";
 import { showToast } from "@/components/ui/Toast";
-import { PERIOD_TYPES, suggestLabel } from "@/data/academic";
+import { PERIOD_TYPES, periodTypeLabel, periodTypeValue, suggestLabel } from "@/data/academic";
 import { fromISO, toISO } from "@/organisation/helpers";
+import { formatDate } from "@/utils/dates";
 import { useEffect, useState } from "react";
 import { Text } from "react-native";
 
@@ -20,12 +21,7 @@ type Props = {
   onSave: (period: PeriodeData) => Promise<void>;
 };
 
-export default function AddPeriodModal({
-  visible,
-  period,
-  onClose,
-  onSave,
-}: Props) {
+export default function AddPeriodModal({ visible, period, onClose, onSave }: Props) {
   return (
     <SheetModal visible={visible} onClose={onClose}>
       <PeriodForm
@@ -38,9 +34,14 @@ export default function AddPeriodModal({
   );
 }
 
-type Errors = Partial<
-  Record<"annee" | "cycle" | "ordre" | "name" | "debut" | "fin", string>
->;
+type Errors = Partial<Record<"annee" | "cycle" | "ordre" | "name" | "debut" | "fin", string>>;
+
+/** Nombre de périodes dans une année : 3 trimestres, 2 semestres (pas de limite pour les autres types) */
+const MAX_ORDRE: Record<string, number> = { trimestre: 3, semestre: 2 };
+
+/** Ajoute la valeur actuelle si la liste chargée ne la contient pas (modification) */
+const withCurrent = (options: Option[], value: string, label: string) =>
+  value && !options.some((o) => o.value === value) ? [...options, { value, label }] : options;
 
 function PeriodForm({
   period,
@@ -48,6 +49,7 @@ function PeriodForm({
   onSave,
 }: Omit<Props, "visible" | "period"> & { period: Periode | null }) {
   const isEdit = !!period;
+  const initialType = periodTypeValue(period?.type ?? "Trimestre");
 
   const [annees, setAnnees] = useState<Annee[] | null>(null);
   const [cycles, setCycles] = useState<Cycle[] | null>(null);
@@ -56,23 +58,17 @@ function PeriodForm({
   const [annee, setAnnee] = useState(period?.annee_public_key ?? "");
   const [cycle, setCycle] = useState(period?.cycle_public_key ?? "");
   const [ordre, setOrdre] = useState(String(period?.ordre ?? 1));
-  const [type, setType] = useState(period?.type ?? "TRIMESTRE");
-  const [name, setName] = useState(
-    period?.name ?? suggestLabel("TRIMESTRE", 1),
-  );
+  const [type, setType] = useState(initialType);
+  const [name, setName] = useState(period?.name ?? suggestLabel(initialType, 1));
   const [nameEdited, setNameEdited] = useState(isEdit); // le libellé n'est plus suggéré une fois modifié à la main
-  const [debut, setDebut] = useState<Date | null>(
-    period ? fromISO(period.debut) : null,
-  );
-  const [fin, setFin] = useState<Date | null>(
-    period ? fromISO(period.fin) : null,
-  );
+  const [debut, setDebut] = useState<Date | null>(period ? fromISO(period.debut) : null);
+  const [fin, setFin] = useState<Date | null>(period ? fromISO(period.fin) : null);
   const [locked, setLocked] = useState(!!period?.is_locked);
   const [errors, setErrors] = useState<Errors>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
 
-  // Les vraies années et les vrais cycles, le serveur attend leur public_key
+  // Les vraies années et les vrais cycles : le serveur attend leur public_key
   useEffect(() => {
     let active = true;
     Promise.all([getAllAnnees(), getCycles()])
@@ -80,6 +76,11 @@ function PeriodForm({
         if (!active) return;
         setAnnees(allAnnees);
         setCycles(allCycles);
+        // Nouvelle période : l'année en cours est proposée d'office
+        const current = allAnnees.find((a) => anneeStatus(a) === "active");
+        if (current) setAnnee((v) => v || current.public_key);
+        // Un seul cycle : il est choisi d'office
+        if (allCycles.length === 1) setCycle((v) => v || allCycles[0].public_key);
       })
       .catch(() => {
         if (active) setChoicesFailed(true);
@@ -89,44 +90,50 @@ function PeriodForm({
     };
   }, []);
 
-  // En modification, la valeur actuelle reste affichée pendant le chargement
-  const anneeOptions =
-    annees?.map((a) => ({
+  // En modification, la valeur actuelle reste affichée pendant le chargement et même si la liste ne la contient pas
+  const anneeOptions = withCurrent(
+    (annees ?? []).map((a) => ({
       value: a.public_key,
-      label: `${a.name}`,
-    })) ??
-    (period
-      ? [{ value: period.annee_public_key, label: period.annee_name }]
-      : []);
-  const cycleOptions =
-    cycles?.map((c) => ({ value: c.public_key, label: c.name })) ??
-    (period
-      ? [{ value: period.cycle_public_key, label: period.cycle_name }]
-      : []);
-  const typeOptions = [...new Set([...PERIOD_TYPES, type])].map((t) => ({
-    value: t,
-    label: t,
-  }));
+      label: anneeStatus(a) === "active" ? `${a.name} (en cours)` : a.name,
+    })),
+    period?.annee_public_key ?? "",
+    period?.annee_name ?? "",
+  );
+  const cycleOptions = withCurrent(
+    (cycles ?? []).map((c) => ({ value: c.public_key, label: c.name })),
+    period?.cycle_public_key ?? "",
+    period?.cycle_name ?? "",
+  );
+  // Une valeur inconnue venue du serveur reste sélectionnable
+  const typeOptions = withCurrent(PERIOD_TYPES, type, periodTypeLabel(type));
 
+  // Les dates de la période restent dans celles de l'année choisie
   const selectedYear = annees?.find((a) => a.public_key === annee);
+  const yearStart = selectedYear ? fromISO(selectedYear.debut) : undefined;
+  const yearEnd = selectedYear ? fromISO(selectedYear.fin) : undefined;
+  const maxOrdre = MAX_ORDRE[type];
 
   const hasErrors = Object.values(errors).some(Boolean);
-  const clear = (key: keyof Errors) =>
-    setErrors((e) => ({ ...e, [key]: undefined }));
+  const clear = (...keys: (keyof Errors)[]) =>
+    setErrors((e) => ({ ...e, ...Object.fromEntries(keys.map((k) => [k, undefined])) }));
 
   // Le libellé se met à jour tout seul tant qu'on ne l'a pas écrit soi-même
+  const suggest = (t: string, o: string) => {
+    const n = parseInt(o, 10);
+    if (!nameEdited && n > 0) setName(suggestLabel(t, n));
+  };
+
   const onOrdreChange = (text: string) => {
     const clean = text.replace(/[^0-9]/g, "");
     setOrdre(clean);
     clear("ordre");
-    const n = parseInt(clean, 10);
-    if (!nameEdited && n > 0) setName(suggestLabel(type, n));
+    suggest(type, clean);
   };
 
   const onTypeChange = (value: string) => {
     setType(value);
-    const n = parseInt(ordre, 10);
-    if (!nameEdited && n > 0) setName(suggestLabel(value, n));
+    clear("ordre");
+    suggest(value, ordre);
   };
 
   const save = async (data: PeriodeData) => {
@@ -147,14 +154,19 @@ function PeriodForm({
     const next: Errors = {};
     const n = parseInt(ordre, 10);
 
-    if (!annee) next.annee = "Choisis une année scolaire";
-    if (!cycle) next.cycle = "Choisis un cycle";
+    if (!annee) next.annee = "Choisissez une année scolaire";
+    if (!cycle) next.cycle = "Choisissez un cycle";
     if (!(n >= 1)) next.ordre = "Numéro invalide (entier à partir de 1)";
+    else if (maxOrdre && n > maxOrdre)
+      next.ordre = `Une année compte au plus ${maxOrdre} ${periodTypeLabel(type).toLowerCase()}s`;
     if (!name.trim()) next.name = "Le libellé est obligatoire";
-    if (!debut) next.debut = "Choisis la date de début";
-    if (!fin) next.fin = "Choisis la date de fin";
-    if (debut && fin && fin <= debut)
-      next.fin = "La date de fin doit être après la date de début";
+    if (!debut) next.debut = "Choisissez la date de début";
+    if (!fin) next.fin = "Choisissez la date de fin";
+    if (debut && fin && fin <= debut) next.fin = "La date de fin doit être après la date de début";
+    if (yearStart && debut && debut < yearStart)
+      next.debut = `La période commence avant l'année scolaire (${formatDate(yearStart)})`;
+    if (yearEnd && fin && fin > yearEnd)
+      next.fin = `La période finit après l'année scolaire (${formatDate(yearEnd)})`;
 
     setErrors(next);
     if (Object.keys(next).length > 0) return false;
@@ -174,13 +186,13 @@ function PeriodForm({
 
   const loading = !choicesFailed && (annees === null || cycles === null);
   const choicesError = choicesFailed
-    ? "Impossible de charger les choix. Ferme puis rouvre ce formulaire."
+    ? "Impossible de charger les choix. Fermez puis rouvrez ce formulaire."
     : undefined;
 
   return (
     <FormSheet
       title={isEdit ? "Modifier la période" : "Nouvelle période"}
-      subtitle={isEdit && period ? period.name : "Crée une nouvelle période"}
+      subtitle={isEdit && period ? period.name : "Une période de l'année scolaire"}
       submitLabel={saving ? "Envoi…" : isEdit ? "Enregistrer" : "Créer"}
       showError={hasErrors}
       onClose={onClose}
@@ -194,10 +206,15 @@ function PeriodForm({
         options={anneeOptions}
         onChange={(v) => {
           setAnnee(v);
-          clear("annee");
+          clear("annee", "debut", "fin");
         }}
         error={errors.annee ?? choicesError}
       />
+      {selectedYear && (
+        <Text className="-mt-3 mb-4 font-inter text-xs text-muted">
+          Du {formatDate(fromISO(selectedYear.debut))} au {formatDate(fromISO(selectedYear.fin))}
+        </Text>
+      )}
 
       <Select
         label="Cycle *"
@@ -212,6 +229,8 @@ function PeriodForm({
         error={errors.cycle ?? choicesError}
       />
 
+      <Select label="Type *" icon="layers-outline" value={type} options={typeOptions} onChange={onTypeChange} />
+
       <Input
         label="Numéro *"
         icon="keypad-outline"
@@ -219,7 +238,7 @@ function PeriodForm({
         value={ordre}
         onChangeText={onOrdreChange}
         keyboardType="number-pad"
-        maxLength={2}
+        maxLength={1}
         error={errors.ordre}
       />
 
@@ -236,30 +255,25 @@ function PeriodForm({
         error={errors.name}
       />
 
-      <Select
-        label="Type *"
-        icon="layers-outline"
-        value={type}
-        options={typeOptions}
-        onChange={onTypeChange}
-      />
-
       <DateField
-        label="Date début *"
+        label="Date de début *"
         value={debut}
-        defaultValue={selectedYear ? fromISO(selectedYear.debut) : undefined}
+        defaultValue={yearStart}
+        minimumDate={yearStart}
+        maximumDate={yearEnd}
         onChange={(d) => {
           setDebut(d);
-          clear("debut");
+          clear("debut", "fin");
         }}
         error={errors.debut}
       />
 
       <DateField
-        label="Date fin *"
+        label="Date de fin *"
         value={fin}
-        defaultValue={selectedYear ? fromISO(selectedYear.fin) : undefined}
-        minimumDate={debut ?? undefined}
+        defaultValue={debut ?? yearEnd}
+        minimumDate={debut ?? yearStart}
+        maximumDate={yearEnd}
         onChange={(d) => {
           setFin(d);
           clear("fin");
@@ -271,12 +285,11 @@ function PeriodForm({
         checked={locked}
         onToggle={() => setLocked((v) => !v)}
         title="Verrouillée"
+        description="Plus aucune note ne peut être saisie sur cette période"
       />
 
       {saveError ? (
-        <Text className="mt-4 font-inter text-[13px] text-red-500">
-          {saveError}
-        </Text>
+        <Text className="mt-4 font-inter text-[13px] text-red-500">{saveError}</Text>
       ) : null}
     </FormSheet>
   );

@@ -1,60 +1,83 @@
-import { api } from "@/api/client";
+import { api, okMessage } from "@/api/client";
 import { fetchAllPages } from "@/api/pages";
+import { Platform } from "react-native";
+import { normalize } from "@/utils/text";
 
 /**
- * Corps attendu pour une inscription. annee, niveau_precedant, niveau_actuel et classe sont des public_key ;
- * les dates sont en ISO « 2015-03-12T00:00:00Z ». Un champ facultatif non rempli part à null.
+ * Corps de POST /inscriptions, identique au formulaire du site.
+ * eleve, niveau_precedant, niveau_actuel et serie sont des public_key ; birth_day est au format « 2015-03-12 ».
+ * Un champ non rempli part vide ("") : le serveur le traite comme absent.
  */
 export type InscriptionInput = {
-  // Année et type
-  annee: string;
-  type: "NOUVELLE" | "REINSCRIPTION";
-  eleve: string | null; // public_key de l'élève déjà inscrit (réinscription)
-  // Élève (nouvelle inscription seulement : null pour une réinscription)
-  name: string | null;
-  firstname: string | null;
-  gender: "M" | "F" | null;
-  birth_day: string | null;
-  birth_of: string | null;
-  nationality: string | null;
-  matricule_national: string | null;
-  numero_extrait: string | null;
-  photo_path: string | null;
-  residence: string | null;
-  city: string | null;
-  phone: string | null;
-  groupe_sang: string | null;
-  observat_medicales: string | null;
+  type_ins: string; // nouvelle | reinscription
+  eleve: string; // public_key de l'élève déjà inscrit (réinscription)
+  // Identité
+  name: string;
+  firstname: string;
+  birth_day: string;
+  birth_of: string;
+  gender: string; // M | F
+  nationality: string;
+  national_mat: string;
+  numero_extrait: string;
+  photo: string | null;
+  residence: string; // Résidence (ville / commune)
+  city: string; // Quartier
+  phone: string;
+  groupe_sang: string;
+  observat_medic: string;
+  ancien_ecole: string;
   // Parent ou tuteur
-  nom_parent: string | null;
-  prenoms_parent: string | null;
-  phone_parent: string | null;
-  lien_parent: string | null;
-  job_parent: string | null;
+  nom_parent: string;
+  prenoms_parent: string;
+  phone_parent: string;
+  lien_parent: string;
+  job_parent: string;
   // Scolarité
-  ancien_ecole: string | null;
-  niveau_precedant: string | null;
+  niveau_precedant: string;
   niveau_actuel: string;
-  classe: string;
-  affectation: string;
-  regime: string;
-  est_redoublant: boolean;
-  decision_fin_annee: string | null;
+  serie: string;
+  affectation: string; // affecte | non_affecte
+  regime_eleve: string; // boursier | non_boursier
+  type_paiement: string; // total | tranche
+  lang_v1: string;
+  lang_v2: string;
+  redoublant: boolean;
+  decision_finale: string;
+  sortie_le: string;
+  motif_sort: string;
+  frais_optionnels: string[]; // public_key des frais facultatifs choisis
 };
 
-/** Valeurs proposées dans le formulaire */
+/** Valeurs proposées dans le formulaire (valeurs exactes du site) */
 export const TYPES_INSCRIPTION = [
-  { value: "NOUVELLE", label: "Nouvelle" },
-  { value: "REINSCRIPTION", label: "Réinscription" },
+  { value: "nouvelle", label: "Nouvelle" },
+  { value: "reinscription", label: "Réinscription" },
 ];
 export const AFFECTATIONS = [
-  { value: "AFFECTE", label: "Affecté" },
-  { value: "NON_AFFECTE", label: "Non affecté" },
+  { value: "affecte", label: "Affecté" },
+  { value: "non_affecte", label: "Non affecté" },
 ];
 export const REGIMES = [
-  { value: "BOURSIER", label: "Boursier" },
-  { value: "NON_BOURSIER", label: "Non boursier" },
+  { value: "non_boursier", label: "Non boursier" },
+  { value: "boursier", label: "Boursier" },
 ];
+export const TYPES_PAIEMENT = [
+  { value: "total", label: "Total" },
+  { value: "tranche", label: "Par tranches" },
+];
+export const LIENS_PARENT = [
+  { value: "PERE", label: "Père" },
+  { value: "MERE", label: "Mère" },
+  { value: "ONCLE", label: "Oncle" },
+  { value: "TANTE", label: "Tante" },
+  { value: "GRAND-PERE", label: "Grand-père" },
+  { value: "GRANDE-MERE", label: "Grande-mère" },
+  { value: "FRERE", label: "Frère" },
+  { value: "Soeur", label: "Soeur" },
+  { value: "TUTEUR/TUTRICE", label: "Tuteur/Tutrice" },
+];
+
 /** Nationalités proposées (la liste reste ouverte : « Autre ») */
 export const NATIONALITES = [
   "Ivoirienne",
@@ -75,14 +98,23 @@ export const NATIONALITES = [
   "Autre",
 ];
 
-export const GROUPES_SANGUINS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
+export const GROUPES_SANGUINS = [
+  "A+",
+  "A-",
+  "B+",
+  "B-",
+  "AB+",
+  "AB-",
+  "O+",
+  "O-",
+];
 
 /**
  * Mode fictif : les inscriptions sont gardées dans l'application (en mémoire) au lieu du serveur,
  * en attendant que POST /inscriptions fonctionne. Passer à false pour utiliser la vraie API.
  * Les listes du formulaire (années, niveaux, classes) restent celles de la base.
  */
-export const INSCRIPTIONS_FICTIVES = true;
+export const INSCRIPTIONS_FICTIVES = false;
 
 /** Noms à afficher dans la liste : la requête ne contient que des clés */
 export type InscriptionDisplay = {
@@ -93,10 +125,34 @@ export type InscriptionDisplay = {
   annee_name: string;
 };
 
+/** Photo de l'élève choisie sur le téléphone (facultative) */
+export type PhotoFile = { uri: string; name: string; type: string };
+
+/** Corps multipart : booléens en 1/0, liste en champ[] , photo en fichier */
+async function toFormData(inscription: InscriptionInput, photo: PhotoFile) {
+  const form = new FormData();
+  for (const [key, value] of Object.entries(inscription)) {
+    if (key === "photo" || value === null || value === undefined) continue;
+    if (Array.isArray(value)) value.forEach((v) => form.append(`${key}[]`, String(v)));
+    else if (typeof value === "boolean") form.append(key, value ? "1" : "0");
+    else form.append(key, String(value));
+  }
+  if (Platform.OS === "web") {
+    // Sur le web, l'image choisie est une URL locale : on envoie son contenu
+    const blob = await (await fetch(photo.uri)).blob();
+    form.append("photo", blob, photo.name);
+  } else {
+    // Sur Android / iOS, React Native lit le fichier à partir de son uri
+    form.append("photo", photo as unknown as Blob);
+  }
+  return form;
+}
+
 /** Inscrit un élève et renvoie le message de confirmation */
 export async function createInscription(
   inscription: InscriptionInput,
   display: InscriptionDisplay,
+  photo?: PhotoFile | null,
 ) {
   if (INSCRIPTIONS_FICTIVES) {
     await pause(500); // comme un aller-retour réseau
@@ -104,22 +160,38 @@ export async function createInscription(
     fictives.unshift({
       public_key: `FICTIF-${now.getTime()}`,
       ...display,
-      type: inscription.type,
+      type: inscription.type_ins,
       statut: "EN_ATTENTE",
       date: localDateTime(now),
-      est_redoublant: inscription.est_redoublant,
+      est_redoublant: inscription.redoublant,
       affectation: inscription.affectation,
-      regime: inscription.regime,
-      decision_fin_annee: inscription.decision_fin_annee ?? "",
+      regime: inscription.regime_eleve,
+      decision_fin_annee: inscription.decision_finale,
       modifie_le: "",
     });
     return "Inscription enregistrée (mode fictif, en attendant le serveur).";
   }
-  const { data } = await api.post<{ message?: string }>(
-    "/inscriptions",
-    inscription,
-  );
-  return data?.message || "Inscription enregistrée avec succès.";
+  if (__DEV__)
+    console.log("Inscription : envoi", JSON.stringify(inscription), photo ? `+ photo ${photo.name}` : "sans photo");
+  try {
+    // Avec une photo, le corps part en multipart (comme le formulaire du site) ; sinon en JSON
+    const body = photo ? await toFormData(inscription, photo) : inscription;
+    const { data } = await api.post("/inscriptions", body, {
+      ...(photo ? { headers: { "Content-Type": "multipart/form-data" }, timeout: 60000 } : {}),
+    });
+    if (__DEV__) console.log("Inscription : réponse", JSON.stringify(data));
+    return okMessage(data, "Inscription enregistrée avec succès.");
+  } catch (error) {
+    if (__DEV__) {
+      const e = error as { response?: { status?: number; data?: unknown } };
+      console.log(
+        "Inscription : échec",
+        e.response?.status,
+        JSON.stringify(e.response?.data ?? String(error)),
+      );
+    }
+    throw error;
+  }
 }
 
 /* ---------- Lecture : liste (GET /inscriptions) et détail (GET /inscriptions/{inscription}) ---------- */
@@ -143,7 +215,17 @@ export type Inscription = {
 };
 
 /** Un lien vers une autre table : objet imbriqué { name } ou simple texte */
-type Ref = { public_key?: string; name?: string; libelle?: string; firstname?: string; prenoms?: string; matricule?: string } | string | null;
+type Ref =
+  | {
+      public_key?: string;
+      name?: string;
+      libelle?: string;
+      firstname?: string;
+      prenoms?: string;
+      matricule?: string;
+    }
+  | string
+  | null;
 
 type RawInscription = {
   id?: number;
@@ -166,6 +248,7 @@ type RawInscription = {
   annee_name?: string;
   type?: string;
   type_inscription?: string;
+  type_ins?: string;
   statut?: string;
   status?: string;
   date?: string;
@@ -178,7 +261,10 @@ type RawInscription = {
   est_redoublant?: boolean | number | string | null;
   affectation?: string;
   regime?: string;
+  regime_eleve?: string;
+  redoublant?: boolean | number | string | null;
   decision_fin_annee?: string;
+  decision_finale?: string;
 };
 
 const refName = (r: Ref | undefined) =>
@@ -189,7 +275,10 @@ function toInscription(i: RawInscription): Inscription {
   const eleve = i.eleve && typeof i.eleve === "object" ? i.eleve : null;
   const eleveName =
     i.eleve_fullname ??
-    ([i.eleve_name ?? i.name ?? eleve?.name, i.eleve_firstname ?? i.firstname ?? eleve?.firstname ?? eleve?.prenoms]
+    ([
+      i.eleve_name ?? i.name ?? eleve?.name,
+      i.eleve_firstname ?? i.firstname ?? eleve?.firstname ?? eleve?.prenoms,
+    ]
       .filter(Boolean)
       .join(" ") ||
       (typeof i.eleve === "string" ? i.eleve : ""));
@@ -200,13 +289,14 @@ function toInscription(i: RawInscription): Inscription {
     classe_name: i.classe_name ?? refName(i.classe),
     niveau_name: i.niveau_name ?? i.niveau_actuel_name ?? refName(i.niveau),
     annee_name: i.annee_name ?? refName(i.annee),
-    type: i.type ?? i.type_inscription ?? "",
+    // « nouvelle » / « reinscription » → NOUVELLE / REINSCRIPTION, comme les filtres de la liste
+    type: (i.type_ins ?? i.type ?? i.type_inscription ?? "").toUpperCase(),
     statut: i.statut ?? i.status ?? "",
     date: i.date_inscription ?? i.date ?? i.cree_le ?? i.created_at ?? "",
-    est_redoublant: yes(i.est_redoublant),
+    est_redoublant: yes(i.est_redoublant ?? i.redoublant),
     affectation: i.affectation ?? "",
-    regime: i.regime ?? "",
-    decision_fin_annee: i.decision_fin_annee ?? "",
+    regime: i.regime_eleve ?? i.regime ?? "",
+    decision_fin_annee: i.decision_finale ?? i.decision_fin_annee ?? "",
     modifie_le: i.modifie_le ?? i.modifiee_le ?? i.updated_at ?? "",
   };
 }
@@ -254,10 +344,17 @@ export async function getInscription(publicKey: string) {
   return toInscription({ ...raw, public_key: raw?.public_key ?? publicKey });
 }
 
+/** Supprime une inscription (DELETE /inscriptions/{inscription}) */
+export async function deleteInscription(publicKey: string) {
+  const { data } = await api.delete(`/inscriptions/${encodeURIComponent(publicKey)}`);
+  return okMessage(data, "Inscription supprimée avec succès.");
+}
+
 /* ---------- Libellés ---------- */
 
 const label = (list: { value: string; label: string }[], v: string) =>
-  list.find((x) => x.value === v)?.label ?? humanize(v);
+  list.find((x) => x.value.toLowerCase() === v.toLowerCase())?.label ??
+  humanize(v);
 
 /** « EN_ATTENTE » → « En attente » */
 export const humanize = (v: string) => {
@@ -269,8 +366,14 @@ export const humanize = (v: string) => {
     REJETEE: "Rejetée",
     TERMINEE: "Terminée",
     ACTIVE: "Active",
+    PREINSCRIT: "Préinscrit",
+    PREINSCRITE: "Préinscrite",
+    INSCRIT: "Inscrit",
+    INSCRITE: "Inscrite",
+    ANNULE: "Annulé",
   };
-  if (known[v]) return known[v];
+  const k = normalize(v).toUpperCase();
+  if (known[k]) return known[k];
   const w = v.toLowerCase().replace(/_/g, " ").trim();
   return w ? w[0].toUpperCase() + w.slice(1) : "";
 };
@@ -312,14 +415,52 @@ const exemple = (
   est_redoublant,
   affectation: n % 2 ? "AFFECTE" : "NON_AFFECTE",
   regime: n % 3 ? "NON_BOURSIER" : "BOURSIER",
-  decision_fin_annee: type === "REINSCRIPTION" ? "Admis en classe supérieure" : "",
+  decision_fin_annee:
+    type === "REINSCRIPTION" ? "Admis en classe supérieure" : "",
   modifie_le: "",
 });
 
 // Quelques exemples pour que la liste ne soit pas vide ; les nouvelles inscriptions s'ajoutent en tête
 const fictives: Inscription[] = [
-  exemple(1, "KOUASSI Aya Marie", "07055027R", "6e A", "Sixième", "NOUVELLE", "VALIDEE", "2026-09-02 08:15:00"),
-  exemple(2, "TRAORE Ibrahim", "08123456K", "Tle D1", "Terminale", "REINSCRIPTION", "VALIDEE", "2026-09-03 10:40:00"),
-  exemple(3, "KONE Awa Fatou", "09234567M", "3e B", "Troisième", "REINSCRIPTION", "EN_ATTENTE", "2026-09-05 14:05:00", true),
-  exemple(4, "YAO Konan Serge", "", "2nde C1", "Seconde", "NOUVELLE", "EN_ATTENTE", "2026-09-08 09:20:00"),
+  exemple(
+    1,
+    "KOUASSI Aya Marie",
+    "07055027R",
+    "6e A",
+    "Sixième",
+    "NOUVELLE",
+    "VALIDEE",
+    "2026-09-02 08:15:00",
+  ),
+  exemple(
+    2,
+    "TRAORE Ibrahim",
+    "08123456K",
+    "Tle D1",
+    "Terminale",
+    "REINSCRIPTION",
+    "VALIDEE",
+    "2026-09-03 10:40:00",
+  ),
+  exemple(
+    3,
+    "KONE Awa Fatou",
+    "09234567M",
+    "3e B",
+    "Troisième",
+    "REINSCRIPTION",
+    "EN_ATTENTE",
+    "2026-09-05 14:05:00",
+    true,
+  ),
+  exemple(
+    4,
+    "YAO Konan Serge",
+    "",
+    "2nde C1",
+    "Seconde",
+    "NOUVELLE",
+    "EN_ATTENTE",
+    "2026-09-08 09:20:00",
+  ),
 ];

@@ -1,3 +1,4 @@
+import { PHONE_ERROR, PHONE_INPUT, isPhone, toPhone } from "@/utils/phone";
 import Button from "@/components/ui/Button";
 import CheckboxRow from "@/components/ui/CheckboxRow";
 import DateField from "@/components/ui/DateField";
@@ -110,7 +111,7 @@ function StudentForm({ student, existing, onClose, onSave }: FormProps) {
   );
   const [address, setAddress] = useState(student?.address ?? "");
   const [district, setDistrict] = useState(student?.district ?? "");
-  const [phone, setPhone] = useState(student?.phone ?? "");
+  const [phone, setPhone] = useState(toPhone(student?.phone));
   const [bloodGroup, setBloodGroup] = useState(student?.bloodGroup ?? "");
   const [medicalNotes, setMedicalNotes] = useState(student?.medicalNotes ?? "");
   const [previousSchool, setPreviousSchool] = useState(
@@ -148,8 +149,8 @@ function StudentForm({ student, existing, onClose, onSave }: FormProps) {
       next.birthDate = "La date de naissance ne peut pas être dans le futur";
     }
 
-    if (phone.trim() && !/^[+0-9\s().-]{8,20}$/.test(phone.trim())) {
-      next.phone = "Numéro de téléphone invalide";
+    if (phone.trim() && !isPhone(phone)) {
+      next.phone = PHONE_ERROR;
     }
 
     setErrors(next);
@@ -364,13 +365,12 @@ function StudentForm({ student, existing, onClose, onSave }: FormProps) {
         <Input
           label="Téléphone"
           icon="call-outline"
-          placeholder="+221 77 000 00 00"
+          {...PHONE_INPUT}
           value={phone}
           onChangeText={(t) => {
-            setPhone(t);
+            setPhone(toPhone(t));
             clear("phone");
           }}
-          keyboardType="phone-pad"
           error={errors.phone}
         />
 

@@ -1,3 +1,4 @@
+import { periodTypeLabel } from "@/data/academic";
 import { SkeletonList } from "@/components/ui/Skeleton";
 import { apiErrorMessage } from "@/api/client";
 import {
@@ -118,7 +119,7 @@ export default function Periodes() {
     (p) =>
       !q ||
       normalize(
-        `${p.name} ${p.annee_name} ${p.cycle_name} ${p.type} ${p.is_locked ? "verrouillee" : ""}`,
+        `${p.name} ${p.annee_name} ${p.cycle_name} ${p.type} ${periodTypeLabel(p.type)} ${p.is_locked ? "verrouillee" : ""}`,
       ).includes(q),
   );
 
@@ -326,7 +327,7 @@ function PeriodeCard({
             {p.annee_name}
           </Text>
           <Text className="font-inter text-xs text-muted">
-            {p.cycle_name} · {p.type} n°{p.ordre}
+            {p.cycle_name} · {periodTypeLabel(p.type)} n°{p.ordre}
           </Text>
           <Text className="font-inter text-xs text-muted">
             {formatDate(start)} – {formatDate(end)}

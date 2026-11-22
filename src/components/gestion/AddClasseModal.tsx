@@ -7,6 +7,7 @@ import { FormSheet, SheetModal } from "@/components/ui/FormSheet";
 import Input from "@/components/ui/Input";
 import Select, { Option } from "@/components/ui/Select";
 import { showToast } from "@/components/ui/Toast";
+import { fieldsFor } from "@/utils/niveaux";
 import { normalize } from "@/utils/text";
 import { useEffect, useState } from "react";
 import { Text } from "react-native";
@@ -64,27 +65,6 @@ const NO_ROOM = "Aucune salle disponible pour cet effectif maximal !";
 const NO_SERIE = "";
 
 const LV2_OPTIONS: Option[] = LANGUES_V2;
-
-/** Niveaux du lycée (Seconde → Terminale) : seuls eux ont une série. Accepte « 2nde », « 1re », « Tle »… */
-const isLycee = (niveauName: string) =>
-  /(^|[^a-z0-9])(second|2nd|2de|premi|1er|1re|termin|tle)/.test(
-    normalize(niveauName),
-  );
-
-/** Quatrième et Troisième. Accepte « 4e », « 4ème », « 3eme », « Quatrième »… */
-const isCollegeHaut = (niveauName: string) =>
-  /(^|[^a-z0-9])(quatri|troisi|[34] ?(e|eme|em)([^a-z0-9]|$))/.test(normalize(niveauName));
-
-/**
- * Champs selon le niveau (les 5 premiers sont toujours là : niveau, salle, nom, effectifs min et max) :
- * - Moyenne section → Cinquième : rien de plus
- * - Quatrième → Troisième : + LV2
- * - Seconde → Terminale : + LV2 et série
- */
-const fieldsFor = (niveauName: string) => {
-  const lycee = isLycee(niveauName);
-  return { lv2: lycee || isCollegeHaut(niveauName), serie: lycee };
-};
 
 /** Retrouve la valeur d'une liste : par sa clé si on l'a, sinon par son nom affiché */
 function findValue(options: Option[], key: string, name: string) {

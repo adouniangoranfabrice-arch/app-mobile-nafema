@@ -1,3 +1,4 @@
+import { periodTypeLabel } from "@/data/academic";
 import { apiErrorMessage } from "@/api/client";
 import {
   deletePeriode,
@@ -179,7 +180,7 @@ function PeriodeContent({
             <InfoRow
               icon="layers-outline"
               label="Type"
-              value={period.type || "—"}
+              value={period.type ? periodTypeLabel(period.type) : "—"}
               bordered
             />
             <InfoRow

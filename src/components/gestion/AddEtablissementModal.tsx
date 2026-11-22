@@ -17,6 +17,7 @@ import Select, { Option } from "@/components/ui/Select";
 import { showFormError, showToast } from "@/components/ui/Toast";
 import { Drena } from "@/data/drenas";
 import { normalize } from "@/utils/text";
+import { PHONE_ERROR, PHONE_INPUT, isPhone, toPhone } from "@/utils/phone";
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -129,14 +130,14 @@ function fromDetail(d: EtablissementDetail): Form {
     localisation: d.localisation,
     ville: d.city,
     commune: d.commune,
-    phone: d.phone,
+    phone: toPhone(d.phone),
     email_ecole: d.email_ecole,
     autorisation: d.autorisation,
     civility: d.dir_civility,
     sexe: d.dir_sexe.toUpperCase(),
     dir_nom: d.dir_nom,
     dir_prenoms: prenoms,
-    dir_phone: d.dir_phone,
+    dir_phone: toPhone(d.dir_phone),
     dir_mail: d.dir_mail,
   };
 }
@@ -151,7 +152,6 @@ const passwordRules = (p: string) => [
 ];
 
 const isEmail =(v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
-const isPhone = (v: string) => /^\+?[\d\s.-]{8,}$/.test(v.trim());
 
 /** Contrôle d'une étape. Obligatoires (comme sur le site) : type, catégorie, nom, slug, DRENA et le dirigeant */
 function validate(step: Step, f: Form): Errors {
@@ -168,7 +168,7 @@ function validate(step: Step, f: Form): Errors {
     if (!f.dren) e.dren = "Choisissez la DRENA";
   }
   if (step === 2) {
-    if (f.phone.trim() && !isPhone(f.phone)) e.phone = "Numéro de téléphone invalide";
+    if (f.phone.trim() && !isPhone(f.phone)) e.phone = PHONE_ERROR;
     if (f.email_ecole.trim() && !isEmail(f.email_ecole)) e.email_ecole = "Adresse e-mail invalide";
   }
   if (step === 3) {
@@ -177,7 +177,7 @@ function validate(step: Step, f: Form): Errors {
     if (!f.dir_nom.trim()) e.dir_nom = "Le nom est obligatoire";
     if (!f.dir_prenoms.trim()) e.dir_prenoms = "Les prénoms sont obligatoires";
     if (!f.dir_phone.trim()) e.dir_phone = "Le téléphone est obligatoire";
-    else if (!isPhone(f.dir_phone)) e.dir_phone = "Numéro de téléphone invalide";
+    else if (!isPhone(f.dir_phone)) e.dir_phone = PHONE_ERROR;
     if (!f.dir_mail.trim()) e.dir_mail = "L'e-mail de connexion est obligatoire";
     else if (!isEmail(f.dir_mail)) e.dir_mail = "Adresse e-mail invalide";
     if (f.mot_passe) {
@@ -519,10 +519,9 @@ function EtablissementForm({
             <Input
               label="Téléphone"
               icon="call-outline"
-              placeholder="+225 27 22 00 00 00"
-              keyboardType="phone-pad"
+              {...PHONE_INPUT}
               value={form.phone}
-              onChangeText={(t) => set("phone", t)}
+              onChangeText={(t) => set("phone", toPhone(t))}
               error={errors.phone}
             />
             <Input
@@ -588,10 +587,9 @@ function EtablissementForm({
             <Input
               label="Téléphone"
               icon="call-outline"
-              placeholder="+225 07 00 00 00 00"
-              keyboardType="phone-pad"
+              {...PHONE_INPUT}
               value={form.dir_phone}
-              onChangeText={(t) => set("dir_phone", t)}
+              onChangeText={(t) => set("dir_phone", toPhone(t))}
               error={errors.dir_phone}
             />
             <Input

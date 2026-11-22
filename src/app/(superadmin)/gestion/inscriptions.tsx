@@ -1,4 +1,6 @@
+import { apiErrorMessage } from "@/api/client";
 import {
+  deleteInscription,
   getInscriptions,
   humanize,
   Inscription,
@@ -9,17 +11,19 @@ import FilterChips from "@/components/ui/FilterChips";
 import FixedHeader from "@/components/ui/FixedHeader";
 import PageBar from "@/components/ui/PageBar";
 import SearchBar from "@/components/ui/SearchBar";
+import { showToast } from "@/components/ui/Toast";
 import { SkeletonList } from "@/components/ui/Skeleton";
 import { useGestion } from "@/hooks/use-gestion";
 import { Badge, IconButton } from "@/organisation/ui";
 import { fromISO } from "@/organisation/helpers";
+import { confirmDelete } from "@/utils/confirm";
 import { formatDate } from "@/utils/dates";
 import { normalize } from "@/utils/text";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, FlatList, Platform, Pressable, Text, View } from "react-native";
 
 const PAGE_SIZE = 20;
 
@@ -91,6 +95,21 @@ export default function Inscriptions() {
         regime: i.regime,
         decision_fin_annee: i.decision_fin_annee,
       }),
+    );
+
+  const remove = (i: Inscription) =>
+    confirmDelete(
+      "Supprimer cette inscription ?",
+      [i.eleve_name, i.matricule, i.annee_name].filter(Boolean).join(" · "),
+      async () => {
+        try {
+          const message = await deleteInscription(i.public_key);
+          load("refreshing");
+          showToast(message);
+        } catch (error) {
+          showToast(apiErrorMessage(error), "error");
+        }
+      },
     );
 
   // Recherche par élève, type ou statut (comme sur le site), et aussi classe et année
@@ -208,51 +227,67 @@ export default function Inscriptions() {
         onRefresh={() => load("refreshing")}
         renderItem={({ item }) => (
           <View className="w-full max-w-[640px] self-center px-5 pb-3">
-            <View className="flex-row items-center gap-3 rounded-3xl bg-white p-4 shadow-sm">
+            <View className="rounded-3xl bg-white p-4 shadow-sm">
               <Pressable
                 onPress={() => openDetail(item)}
                 accessibilityRole="button"
                 accessibilityLabel={item.eleve_name || "Inscription"}
-                className="flex-1 active:opacity-70"
+                className="active:opacity-70"
               >
+                {/* Matricule + statut */}
+                <View className="flex-row items-center gap-2">
+                  <Text
+                    numberOfLines={1}
+                    className="flex-1 font-mono text-[12px] text-muted"
+                    style={{ fontFamily: Platform.select({ ios: "Menlo", default: "monospace" }) }}
+                  >
+                    {item.matricule || "Sans matricule"}
+                  </Text>
+                  {!!item.statut && <Badge label={humanize(item.statut)} tone="slate" />}
+                </View>
+
                 {/* Élève */}
-                <Text
-                  numberOfLines={1}
-                  className="font-inter-semibold text-[15px] text-ink"
-                >
+                <Text numberOfLines={1} className="mt-1 font-inter-bold text-[16px] uppercase text-ink">
                   {item.eleve_name || "Élève non renseigné"}
                 </Text>
-                {/* Classe · année */}
-                <Text
-                  numberOfLines={1}
-                  className="mt-0.5 font-inter-semibold text-xs text-primary"
-                >
-                  {[item.classe_name, item.annee_name].filter(Boolean).join(" · ") || "—"}
-                </Text>
-                {/* Date · redoublant */}
-                <Text numberOfLines={1} className="mt-0.5 font-inter text-xs text-muted">
-                  {[item.date ? `Le ${shortDate(item.date)}` : "", item.est_redoublant ? "Redoublant" : ""]
-                    .filter(Boolean)
-                    .join(" · ") || " "}
-                </Text>
-                {/* Type et statut */}
-                <View className="mt-1.5 flex-row flex-wrap gap-1.5">
-                  {!!item.type && (
+
+                {/* Classe, année, date, redoublant */}
+                <View className="mt-3 flex-row flex-wrap gap-y-2">
+                  <Info label="Classe" value={item.classe_name || "Non attribuée"} muted={!item.classe_name} />
+                  <Info label="Année scolaire" value={item.annee_name || "—"} />
+                  <Info label="Date d'inscription" value={item.date ? shortDate(item.date) : "—"} />
+                  <Info label="Redoublant" value={item.est_redoublant ? "Oui" : "Non"} />
+                </View>
+
+                {!!item.type && (
+                  <View className="mt-3 flex-row">
                     <Badge
                       label={typeLabel(item.type)}
                       tone={item.type === "REINSCRIPTION" ? "purple" : "blue"}
                     />
-                  )}
-                  {!!item.statut && <Badge label={humanize(item.statut)} tone="slate" />}
-                </View>
+                  </View>
+                )}
               </Pressable>
 
-              <IconButton
-                icon="eye-outline"
-                color="#1B2A41"
-                label="Voir"
-                onPress={() => openDetail(item)}
-              />
+              {/* Actions : encaisser, voir, supprimer */}
+              <View className="mt-3 flex-row items-center gap-2 border-t border-line pt-3">
+                {canEdit && (
+                  <Pressable
+                    onPress={() => router.push(href("paiements"))}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Encaisser pour ${item.eleve_name}`}
+                    className="h-10 flex-1 flex-row items-center justify-center gap-2 rounded-xl bg-green-600 active:opacity-80"
+                  >
+                    <Ionicons name="cash-outline" size={18} color="#FFFFFF" />
+                    <Text className="font-inter-semibold text-[14px] text-white">Encaisser</Text>
+                  </Pressable>
+                )}
+                {!canEdit && <View className="flex-1" />}
+                <IconButton icon="eye-outline" color="#1B2A41" label="Voir" onPress={() => openDetail(item)} />
+                {canEdit && (
+                  <IconButton icon="trash-outline" color="#DC2626" label="Supprimer" onPress={() => remove(item)} />
+                )}
+              </View>
             </View>
           </View>
         )}
@@ -302,6 +337,18 @@ export default function Inscriptions() {
         onPrevious={() => setRequestedPage(page - 1)}
         onNext={() => setRequestedPage(page + 1)}
       />
+    </View>
+  );
+}
+
+/** Une information de la carte, sur une demi-largeur */
+function Info({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
+  return (
+    <View className="w-1/2 pr-2">
+      <Text className="font-inter text-[11px] text-muted">{label}</Text>
+      <Text numberOfLines={1} className={`font-inter-semibold text-[14px] ${muted ? "text-muted" : "text-ink"}`}>
+        {value}
+      </Text>
     </View>
   );
 }

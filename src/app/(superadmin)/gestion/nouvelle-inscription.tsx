@@ -1,28 +1,33 @@
 import { anneeStatus, getAllAnnees } from "@/api/annees";
-import { Classe, getClasses } from "@/api/classes";
+import { LANGUES_V2 } from "@/api/classes";
 import { apiErrorMessage } from "@/api/client";
 import { Eleve, eleveLabel, getAllEleves } from "@/api/eleves";
+import { Frais, getFrais, getFraisDetail } from "@/api/frais";
 import {
   AFFECTATIONS,
   createInscription,
   GROUPES_SANGUINS,
   InscriptionInput,
-  INSCRIPTIONS_FICTIVES,
+  LIENS_PARENT,
   markInscriptionsStale,
+  PhotoFile,
   NATIONALITES,
   REGIMES,
   TYPES_INSCRIPTION,
+  TYPES_PAIEMENT,
 } from "@/api/inscriptions";
 import { getNiveaux } from "@/api/niveaux";
-import CheckboxRow from "@/components/ui/CheckboxRow";
+import { getSeries } from "@/api/series";
 import DateField from "@/components/ui/DateField";
 import FixedHeader from "@/components/ui/FixedHeader";
 import Input from "@/components/ui/Input";
+import PhotoPicker from "@/components/ui/PhotoPicker";
 import Segmented from "@/components/ui/Segmented";
 import Select, { Option } from "@/components/ui/Select";
 import { showToast } from "@/components/ui/Toast";
-import { INITIAL_STUDENTS } from "@/data/students";
 import { toISO } from "@/organisation/helpers";
+import { fieldsFor } from "@/utils/niveaux";
+import { PHONE_ERROR, PHONE_INPUT, isPhone, toPhone } from "@/utils/phone";
 import { normalize } from "@/utils/text";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -40,54 +45,51 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-/* ---------- Les trois étapes (mêmes champs que le formulaire du site) ---------- */
+/* ---------- Les étapes (comme sur le site : Identité, puis Parent) ---------- */
 
 type StepInfo = { title: string; icon: keyof typeof Ionicons.glyphMap };
 
-// Nouvelle inscription : 3 étapes. Réinscription : un seul écran (l'élève est déjà connu, pas de parent)
 const STEPS: StepInfo[] = [
   { title: "Identité", icon: "person-outline" },
-  { title: "Scolarité", icon: "school-outline" },
-  { title: "Parent / tuteur", icon: "people-outline" },
+  { title: "Parent", icon: "people-outline" },
 ];
-const STEPS_REINSCRIPTION: StepInfo[] = [
-  { title: "Réinscription", icon: "refresh-outline" },
-];
+// Réinscription : un seul écran (l'élève et son parent sont déjà connus)
+const STEPS_REINSCRIPTION: StepInfo[] = [{ title: "Réinscription", icon: "refresh-outline" }];
 
-const stepsOf = (type: string) =>
-  type === "REINSCRIPTION" ? STEPS_REINSCRIPTION : STEPS;
+const REINSCRIPTION = "reinscription";
 
-type Step = 0 | 1 | 2;
+type Step = 0 | 1;
 
-/** Ce que l'utilisateur saisit (tout en texte, converti à l'envoi) */
+/** Ce que l'utilisateur saisit */
 type Form = {
-  // Étape 1 : identité
   type: string;
   eleve: string;
-  annee: string;
+  // Identité
   name: string;
   firstname: string;
   birthDay: Date | null;
   birthOf: string;
   gender: string;
   nationality: string;
-  matriculeNational: string;
+  nationalMat: string;
   numeroExtrait: string;
-  city: string; // Résidence (ville / commune)
-  residence: string; // Quartier
+  residence: string; // Résidence (ville / commune)
+  city: string; // Quartier
   phone: string;
   groupeSang: string;
   observations: string;
-  // Étape 2 : informations scolaires
+  // Scolarité
   ancienEcole: string;
   niveauPrecedant: string;
   niveauActuel: string;
-  classe: string;
+  serie: string;
+  langV2: string;
   affectation: string;
   regime: string;
-  redoublant: boolean;
+  typePaiement: string;
+  fraisOptionnels: string[];
   decision: string;
-  // Étape 3 : parent ou tuteur
+  // Parent ou tuteur
   nomParent: string;
   prenomsParent: string;
   phoneParent: string;
@@ -96,159 +98,117 @@ type Form = {
 };
 
 const EMPTY: Form = {
-  type: "NOUVELLE",
+  type: "nouvelle",
   eleve: "",
-  annee: "",
   name: "",
   firstname: "",
   birthDay: null,
   birthOf: "",
   gender: "",
-  nationality: "",
-  matriculeNational: "",
+  nationality: "Ivoirienne",
+  nationalMat: "",
   numeroExtrait: "",
-  city: "",
   residence: "",
+  city: "",
   phone: "",
   groupeSang: "",
   observations: "",
   ancienEcole: "",
   niveauPrecedant: "",
   niveauActuel: "",
-  classe: "",
-  affectation: "AFFECTE",
-  regime: "BOURSIER",
-  redoublant: false,
+  serie: "",
+  langV2: "",
+  affectation: "non_affecte",
+  regime: "non_boursier",
+  typePaiement: "total",
+  fraisOptionnels: [],
   decision: "",
   nomParent: "",
   prenomsParent: "",
   phoneParent: "",
-  lienParent: "",
+  lienParent: "PERE",
   jobParent: "",
 };
 
 type Errors = Partial<Record<keyof Form, string>>;
 
-const LIENS: Option[] = [
-  "Père",
-  "Mère",
-  "Tuteur",
-  "Tutrice",
-  "Grand-parent",
-  "Oncle / tante",
-  "Frère / sœur",
-  "Autre",
-].map((l) => ({ value: l, label: l }));
+/** Un frais de l'année, avec ce qu'en dit son détail */
+type FraisNiveau = Frais & { required: boolean; tranchable: boolean };
 
-// Au moins 8 chiffres ; espaces, tirets, points et « + » acceptés
-const isPhone = (s: string) =>
-  /^[+\d][\d\s.-]*$/.test(s.trim()) && s.replace(/\D/g, "").length >= 8;
+/** Redoublant : déterminé automatiquement, l'élève reprend le même niveau */
+const isRedoublant = (f: Form) => !!f.niveauPrecedant && f.niveauPrecedant === f.niveauActuel;
 
-/** Contrôle d'une étape. Obligatoires (comme sur le site) : type, année, nom, prénoms, niveau actuel, classe, affectation, régime */
-function validate(step: Step, f: Form): Errors {
+/** Contrôle d'une étape. Obligatoires (comme sur le site) : type, nom, prénoms, niveau actuel, régime */
+function validate(step: Step, f: Form, needs: { lv2: boolean; serie: boolean }): Errors {
   const e: Errors = {};
-  // Réinscription : tout est sur un seul écran
-  if (f.type === "REINSCRIPTION") {
-    if (!f.annee) e.annee = "Choisissez l'année scolaire";
-    if (!f.eleve) e.eleve = "Choisissez l'élève à réinscrire";
+  const scolarite = () => {
     if (!f.niveauActuel) e.niveauActuel = "Choisissez le niveau actuel";
-    if (!f.classe) e.classe = "Choisissez la classe";
-    if (!f.affectation) e.affectation = "Choisissez l'affectation";
+    if (needs.serie && !f.serie) e.serie = "Choisissez la série";
     if (!f.regime) e.regime = "Choisissez le régime";
+  };
+  if (f.type === REINSCRIPTION) {
+    if (!f.eleve) e.eleve = "Choisissez l'élève à réinscrire";
+    scolarite();
     return e;
   }
   if (step === 0) {
-    if (!f.type) e.type = "Choisissez le type d'inscription";
-    if (!f.annee) e.annee = "Choisissez l'année scolaire";
     if (!f.name.trim()) e.name = "Le nom est obligatoire";
     if (!f.firstname.trim()) e.firstname = "Les prénoms sont obligatoires";
-    if (f.phone.trim() && !isPhone(f.phone))
-      e.phone = "Numéro de téléphone invalide";
+    if (f.phone.trim() && !isPhone(f.phone)) e.phone = PHONE_ERROR;
+    scolarite();
   }
   if (step === 1) {
-    if (!f.niveauActuel) e.niveauActuel = "Choisissez le niveau actuel";
-    if (!f.classe) e.classe = "Choisissez la classe";
-    if (!f.affectation) e.affectation = "Choisissez l'affectation";
-    if (!f.regime) e.regime = "Choisissez le régime";
-  }
-  if (step === 2) {
-    if (f.phoneParent.trim() && !isPhone(f.phoneParent))
-      e.phoneParent = "Numéro de téléphone invalide";
+    if (f.phoneParent.trim() && !isPhone(f.phoneParent)) e.phoneParent = PHONE_ERROR;
   }
   return e;
 }
 
-/** Saisie → corps de la requête (les champs facultatifs vides partent à null) */
-function toInput(f: Form): InscriptionInput {
-  const opt = (s: string) => s.trim() || null;
-  // Réinscription : seulement l'élève et sa scolarité, le reste part à null
-  if (f.type === "REINSCRIPTION") {
-    return {
-      annee: f.annee,
-      type: "REINSCRIPTION",
-      eleve: f.eleve,
-      name: null,
-      firstname: null,
-      gender: null,
-      birth_day: null,
-      birth_of: null,
-      nationality: null,
-      matricule_national: null,
-      numero_extrait: null,
-      photo_path: null,
-      residence: null,
-      city: null,
-      phone: null,
-      groupe_sang: null,
-      observat_medicales: null,
-      nom_parent: null,
-      prenoms_parent: null,
-      phone_parent: null,
-      lien_parent: null,
-      job_parent: null,
-      ancien_ecole: null,
-      niveau_precedant: opt(f.niveauPrecedant),
-      niveau_actuel: f.niveauActuel,
-      classe: f.classe,
-      affectation: f.affectation,
-      regime: f.regime,
-      est_redoublant: f.redoublant,
-      decision_fin_annee: opt(f.decision),
-    };
-  }
+/** Saisie → corps de POST /inscriptions (mêmes clés et valeurs que le site ; vide = "") */
+function toInput(f: Form, needs: { lv2: boolean; serie: boolean }): InscriptionInput {
+  const reins = f.type === REINSCRIPTION;
+  // Réinscription : l'identité et le parent sont déjà connus du serveur
+  const id = (s: string) => (reins ? "" : s.trim());
   return {
-    annee: f.annee,
-    type: "NOUVELLE",
-    eleve: null,
-    name: f.name.trim(),
-    firstname: f.firstname.trim(),
-    gender: (f.gender || null) as InscriptionInput["gender"],
-    birth_day: f.birthDay ? `${toISO(f.birthDay)}T00:00:00Z` : null,
-    birth_of: opt(f.birthOf),
-    nationality: opt(f.nationality),
-    matricule_national: opt(f.matriculeNational),
-    numero_extrait: opt(f.numeroExtrait),
-    photo_path: null, // pas encore de prise de photo dans l'application
-    residence: opt(f.residence),
-    city: opt(f.city),
-    phone: opt(f.phone),
-    groupe_sang: opt(f.groupeSang),
-    observat_medicales: opt(f.observations),
-    nom_parent: opt(f.nomParent),
-    prenoms_parent: opt(f.prenomsParent),
-    phone_parent: opt(f.phoneParent),
-    lien_parent: opt(f.lienParent),
-    job_parent: opt(f.jobParent),
-    ancien_ecole: opt(f.ancienEcole),
-    niveau_precedant: opt(f.niveauPrecedant),
+    type_ins: f.type,
+    eleve: reins ? f.eleve : "",
+    name: id(f.name),
+    firstname: id(f.firstname),
+    birth_day: !reins && f.birthDay ? toISO(f.birthDay) : "",
+    birth_of: id(f.birthOf),
+    gender: id(f.gender),
+    nationality: id(f.nationality),
+    national_mat: id(f.nationalMat),
+    numero_extrait: id(f.numeroExtrait),
+    photo: null, // la photo choisie part à part, en fichier (multipart)
+    residence: id(f.residence),
+    city: id(f.city),
+    phone: id(f.phone),
+    groupe_sang: id(f.groupeSang),
+    observat_medic: id(f.observations),
+    ancien_ecole: id(f.ancienEcole),
+    nom_parent: id(f.nomParent),
+    prenoms_parent: id(f.prenomsParent),
+    phone_parent: id(f.phoneParent),
+    lien_parent: reins ? "" : f.lienParent,
+    job_parent: id(f.jobParent),
+    niveau_precedant: f.niveauPrecedant,
     niveau_actuel: f.niveauActuel,
-    classe: f.classe,
+    // Série au lycée, LV2 à partir de la Quatrième (rien n'est envoyé sinon, même choisi avant)
+    serie: needs.serie ? f.serie : "",
     affectation: f.affectation,
-    regime: f.regime,
-    est_redoublant: f.redoublant,
-    decision_fin_annee: opt(f.decision),
+    regime_eleve: f.regime,
+    type_paiement: f.typePaiement,
+    lang_v1: "",
+    lang_v2: needs.lv2 ? f.langV2 : "",
+    redoublant: isRedoublant(f),
+    decision_finale: f.decision.trim(),
+    sortie_le: "",
+    motif_sort: "",
+    frais_optionnels: f.fraisOptionnels,
   };
 }
+
+const money = (n: number) => `${n.toLocaleString("fr-FR")} F CFA`;
 
 /* ---------- Écran ---------- */
 
@@ -262,12 +222,15 @@ export default function NouvelleInscription() {
   const [errors, setErrors] = useState<Errors>({});
   const [visited, setVisited] = useState<Set<Step>>(new Set([0]));
   const [saving, setSaving] = useState(false);
+  // Photo facultative, envoyée avec l'inscription
+  const [photo, setPhoto] = useState<PhotoFile | null>(null);
 
   // Listes de la base, chargées à l'ouverture
-  const [annees, setAnnees] = useState<Option[] | null>(null);
   const [niveaux, setNiveaux] = useState<Option[] | null>(null);
-  const [classes, setClasses] = useState<Classe[] | null>(null);
+  const [series, setSeries] = useState<Option[] | null>(null);
   const [eleves, setEleves] = useState<Eleve[] | null>(null);
+  const [frais, setFrais] = useState<Frais[] | null>(null);
+  const [anneeName, setAnneeName] = useState("");
   const [failed, setFailed] = useState<string[]>([]);
 
   useEffect(() => {
@@ -275,67 +238,43 @@ export default function NouvelleInscription() {
     const fail = (what: string) => {
       if (active) setFailed((f) => [...f, what]);
     };
-    getAllAnnees()
-      .then((all) => {
-        if (!active) return;
-        setAnnees(
-          all.map((a) => ({
-            value: a.public_key,
-            label:
-              anneeStatus(a) === "active" ? `${a.name} (en cours)` : a.name,
-          })),
-        );
-        // L'année en cours est proposée d'office
-        const current = all.find((a) => anneeStatus(a) === "active");
-        if (current)
-          setForm((f) => (f.annee ? f : { ...f, annee: current.public_key }));
-      })
-      .catch(() => {
-        setAnnees([]);
-        fail("années");
-      });
     getNiveaux()
-      .then((all) => {
-        if (active)
-          setNiveaux(all.map((n) => ({ value: n.public_key, label: n.name })));
-      })
+      .then((all) => active && setNiveaux(all.map((n) => ({ value: n.public_key, label: n.name }))))
       .catch(() => {
         setNiveaux([]);
         fail("niveaux");
       });
-    getAllEleves()
-      .then((all) => {
-        if (active) setEleves(all);
-      })
+    getSeries()
+      .then(
+        (all) =>
+          active &&
+          setSeries(
+            all.map((s) => ({
+              value: s.public_key,
+              label: s.code ? `${s.libelle} (${s.code})` : s.libelle,
+            })),
+          ),
+      )
       .catch(() => {
-        if (INSCRIPTIONS_FICTIVES) {
-          // Mode fictif : sans la vraie liste, des élèves de démonstration permettent de tester la réinscription
-          if (active)
-            setEleves(
-              INITIAL_STUDENTS.map((st) => ({
-                public_key: `FICTIF-${st.id}`,
-                nom: st.lastName,
-                prenoms: st.firstNames,
-                matricule: st.matricule,
-                etab_name: "",
-                classe_name: "",
-                niveau_name: "",
-                gender: st.sex.startsWith("F") ? "F" : "M",
-              })),
-            );
-          return;
-        }
+        setSeries([]);
+        fail("séries");
+      });
+    getAllEleves()
+      .then((all) => active && setEleves(all))
+      .catch(() => {
         setEleves([]);
         fail("élèves");
       });
-    getClasses()
+    getFrais()
+      .then((all) => active && setFrais(all))
+      .catch(() => setFrais([])); // sans les frais : paiement total, sans frais optionnels
+    // Les frais proposés sont ceux de l'année en cours
+    getAllAnnees()
       .then((all) => {
-        if (active) setClasses(all);
+        const current = all.find((a) => anneeStatus(a) === "active");
+        if (active && current) setAnneeName(current.name);
       })
-      .catch(() => {
-        setClasses([]);
-        fail("classes");
-      });
+      .catch(() => {});
     return () => {
       active = false;
     };
@@ -347,8 +286,73 @@ export default function NouvelleInscription() {
     setErrors((e) => ({ ...e, [key]: undefined }));
   };
 
-  const steps = stepsOf(form.type);
-  const reinscription = form.type === "REINSCRIPTION";
+  const reinscription = form.type === REINSCRIPTION;
+  const steps = reinscription ? STEPS_REINSCRIPTION : STEPS;
+
+  // Série et LV2 selon le niveau actuel
+  const niveauName = niveaux?.find((n) => n.value === form.niveauActuel)?.label ?? "";
+  const needs = fieldsFor(niveauName);
+
+  /* Frais du niveau choisi : leur détail dit s'ils sont obligatoires et fractionnables */
+  const details = useRef(new Map<string, { required: boolean; tranchable: boolean }>());
+  const [fraisNiveau, setFraisNiveau] = useState<FraisNiveau[] | null>(null);
+
+  useEffect(() => {
+    if (!form.niveauActuel || !frais) {
+      setFraisNiveau(null);
+      return;
+    }
+    let active = true;
+    const n = normalize(niveauName);
+    const a = normalize(anneeName);
+    // Frais du niveau ou de « tous les niveaux » (sans niveau), de l'année en cours si on la connaît
+    const list = frais.filter((f) => {
+      const fn = normalize(f.niveau_name);
+      const sameNiveau = !fn || fn === n || fn.includes("tous");
+      const sameAnnee = !a || !f.annee_name || normalize(f.annee_name) === a;
+      return sameNiveau && sameAnnee;
+    });
+    setFraisNiveau(null);
+    Promise.allSettled(
+      list.map(async (f) => {
+        let d = details.current.get(f.public_key);
+        if (!d) {
+          const full = await getFraisDetail(f.public_key);
+          d = { required: full.is_required, tranchable: full.tranchable };
+          details.current.set(f.public_key, d);
+        }
+        return { ...f, ...d };
+      }),
+    ).then((results) => {
+      if (!active) return;
+      const ok = results.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
+      setFraisNiveau(ok);
+      // Les choix qui ne concernent plus ce niveau sont retirés
+      setForm((f) => {
+        const optional = new Set(ok.filter((x) => !x.required).map((x) => x.public_key));
+        const fractionnable = ok.some((x) => x.required && x.tranchable);
+        return {
+          ...f,
+          fraisOptionnels: f.fraisOptionnels.filter((k) => optional.has(k)),
+          typePaiement: fractionnable ? f.typePaiement : "total",
+        };
+      });
+    });
+    return () => {
+      active = false;
+    };
+  }, [form.niveauActuel, frais, niveauName, anneeName]);
+
+  const fractionnable = !!fraisNiveau?.some((x) => x.required && x.tranchable);
+  const optionnels = (fraisNiveau ?? []).filter((x) => !x.required);
+
+  const toggleFrais = (key: string) =>
+    set(
+      "fraisOptionnels",
+      form.fraisOptionnels.includes(key)
+        ? form.fraisOptionnels.filter((k) => k !== key)
+        : [...form.fraisOptionnels, key],
+    );
 
   // Changer de type change le formulaire : on repart de son premier écran
   const changeType = (type: string) => {
@@ -366,7 +370,7 @@ export default function NouvelleInscription() {
 
   // « Suivant » contrôle l'étape en cours ; on peut toujours revenir en arrière
   const next = () => {
-    const e = validate(step, form);
+    const e = validate(step, form, needs);
     setErrors(e);
     if (Object.keys(e).length > 0) {
       showToast("Veuillez corriger les champs en rouge.", "error");
@@ -375,23 +379,19 @@ export default function NouvelleInscription() {
     goTo((step + 1) as Step);
   };
 
-  // Noms affichés dans la liste (la requête ne contient que des clés)
+  // Noms affichés dans la liste (mode fictif seulement)
   const display = () => {
     const eleve = eleves?.find((e) => e.public_key === form.eleve);
-    const classe = classes?.find((c) => c.public_key === form.classe);
     return {
       eleve_name: reinscription
         ? eleve
           ? `${eleve.nom} ${eleve.prenoms}`.trim()
           : ""
         : `${form.name.trim()} ${form.firstname.trim()}`.trim(),
-      matricule: reinscription
-        ? (eleve?.matricule ?? "")
-        : form.matriculeNational.trim(),
-      classe_name: classe?.name ?? "",
-      niveau_name: niveaux?.find((n) => n.value === form.niveauActuel)?.label ?? "",
-      // « 2026-2027 (en cours) » → « 2026-2027 »
-      annee_name: (annees?.find((a) => a.value === form.annee)?.label ?? "").replace(/ \(en cours\)$/, ""),
+      matricule: reinscription ? (eleve?.matricule ?? "") : form.nationalMat.trim(),
+      classe_name: "",
+      niveau_name: niveauName,
+      annee_name: anneeName,
     };
   };
 
@@ -399,7 +399,7 @@ export default function NouvelleInscription() {
     if (saving) return;
     // Tout est contrôlé : on ouvre la première étape qui a une erreur
     for (const s of steps.map((_, i) => i as Step)) {
-      const e = validate(s, form);
+      const e = validate(s, form, needs);
       if (Object.keys(e).length > 0) {
         setErrors(e);
         goTo(s);
@@ -414,7 +414,7 @@ export default function NouvelleInscription() {
     }
     setSaving(true);
     try {
-      const message = await createInscription(toInput(form), display());
+      const message = await createInscription(toInput(form, needs), display(), reinscription ? null : photo);
       markInscriptionsStale(); // la liste des inscriptions se recharge au retour
       showToast(message);
       router.back();
@@ -424,34 +424,154 @@ export default function NouvelleInscription() {
     }
   };
 
-  // Les classes viennent de la table des classes (GET /classes). On propose d'abord celles du niveau choisi :
-  // par clé, ou par nom (« Seconde » trouve « Seconde (2ND) »). Si aucune ne correspond, toutes sont proposées.
-  const niveauName =
-    niveaux?.find((n) => n.value === form.niveauActuel)?.label ?? "";
-  const sameNiveau = (c: Classe) => {
-    if (c.niveau_key) return c.niveau_key === form.niveauActuel;
-    const a = normalize(c.niveau_name);
-    const b = normalize(niveauName);
-    return !!a && !!b && (a === b || a.startsWith(`${b} (`) || b.startsWith(`${a} (`));
-  };
-  const ofNiveau = (classes ?? []).filter(sameNiveau);
-  const classesShown = ofNiveau.length > 0 ? ofNiveau : (classes ?? []);
-  const allClasses = ofNiveau.length === 0 && classesShown.length > 0;
-  const classOptions: Option[] = classesShown.map((c) => ({
-    value: c.public_key,
-    label: [
-      c.name,
-      // Liste complète : on précise le niveau pour s'y retrouver
-      allClasses ? c.niveau_name : "",
-      c.max_effectif ? `${c.max_effectif} places` : "",
-    ]
-      .filter(Boolean)
-      .join(" · "),
-  }));
-
   const listError = (what: string) =>
     failed.includes(what) ? `Impossible de charger les ${what}.` : undefined;
   const last = step === steps.length - 1;
+  const redoublant = isRedoublant(form);
+
+  /* La scolarité : sur l'étape Identité (nouvelle) ou l'écran de réinscription */
+  const scolarite = (
+    <>
+      <Section title="Parcours">
+        {!reinscription && (
+          <Input
+            label="Ancien établissement"
+            icon="business-outline"
+            placeholder="Ex. Lycée moderne de Cocody"
+            value={form.ancienEcole}
+            onChangeText={(t) => set("ancienEcole", t)}
+          />
+        )}
+        <Select
+          label="Niveau précédent"
+          icon="arrow-undo-outline"
+          placeholder={niveaux ? "Sélectionner le niveau précédent" : "Chargement…"}
+          value={form.niveauPrecedant}
+          options={niveaux ?? []}
+          searchable
+          onChange={(v) => set("niveauPrecedant", v)}
+        />
+        <Select
+          label="Niveau actuel *"
+          icon="layers-outline"
+          placeholder={niveaux ? "Sélectionner le niveau actuel" : "Chargement…"}
+          value={form.niveauActuel}
+          options={niveaux ?? []}
+          searchable
+          onChange={(v) => set("niveauActuel", v)}
+          error={errors.niveauActuel ?? listError("niveaux")}
+        />
+        {needs.serie && (
+          <Select
+            label="Série *"
+            icon="git-branch-outline"
+            placeholder={series ? "Sélectionner la série" : "Chargement…"}
+            value={form.serie}
+            options={series ?? []}
+            searchable
+            onChange={(v) => set("serie", v)}
+            error={errors.serie ?? listError("séries")}
+          />
+        )}
+        {needs.lv2 && (
+          <Select
+            label="Langue vivante 2"
+            icon="language-outline"
+            placeholder="Sélectionner la LV2"
+            value={form.langV2}
+            options={LANGUES_V2}
+            onChange={(v) => set("langV2", v)}
+          />
+        )}
+
+        {/* Redoublant : déterminé automatiquement (même niveau que l'an passé) */}
+        <View
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: redoublant, disabled: true }}
+          className="flex-row items-center gap-3 rounded-2xl bg-soft px-4 py-3"
+        >
+          <Ionicons
+            name={redoublant ? "checkbox" : "square-outline"}
+            size={22}
+            color={redoublant ? "#2B5EA8" : "#9AA7B8"}
+          />
+          <View className="flex-1">
+            <Text className="font-inter-semibold text-[14px] text-ink">Redoublant</Text>
+            <Text className="font-inter text-xs text-muted">
+              Déterminé automatiquement : même niveau précédent et actuel
+            </Text>
+          </View>
+        </View>
+      </Section>
+
+      <Section title="Statut et paiement">
+        <Segmented
+          label="Affectation"
+          value={form.affectation}
+          options={AFFECTATIONS}
+          onChange={(v) => set("affectation", v)}
+        />
+        <Segmented
+          label="Régime *"
+          value={form.regime}
+          options={REGIMES}
+          onChange={(v) => set("regime", v)}
+        />
+        <Select
+          label="Mode de paiement"
+          icon="card-outline"
+          value={form.typePaiement}
+          options={TYPES_PAIEMENT}
+          disabled={!fractionnable}
+          onChange={(v) => set("typePaiement", v)}
+        />
+        {!fractionnable && (
+          <Text className="-mt-3 mb-4 font-inter text-xs text-muted">
+            {!form.niveauActuel
+              ? "Choisissez le niveau actuel pour connaître les modes de paiement."
+              : form.niveauActuel && !fraisNiveau
+                ? "Vérification des frais du niveau…"
+                : "Aucun frais obligatoire fractionnable — paiement en total uniquement."}
+          </Text>
+        )}
+
+        {/* Frais facultatifs du niveau (cantine, transport…) */}
+        {optionnels.length > 0 && (
+          <View className="mb-4 gap-2">
+            <Text className="font-inter-semibold text-[15px] text-ink">Frais optionnels</Text>
+            {optionnels.map((f) => {
+              const checked = form.fraisOptionnels.includes(f.public_key);
+              return (
+                <Pressable
+                  key={f.public_key}
+                  onPress={() => toggleFrais(f.public_key)}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked }}
+                  className={`flex-row items-center gap-3 rounded-2xl border px-4 py-3 active:opacity-80 ${checked ? "border-primary bg-soft" : "border-line bg-white"}`}
+                >
+                  <Ionicons
+                    name={checked ? "checkbox" : "square-outline"}
+                    size={22}
+                    color={checked ? "#2B5EA8" : "#9AA7B8"}
+                  />
+                  <Text className="flex-1 font-inter-semibold text-[14px] text-ink">{f.name}</Text>
+                  <Text className="font-inter text-[13px] text-muted">{money(f.montant_frais)}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+
+        <Input
+          label="Décision fin d'année"
+          icon="ribbon-outline"
+          placeholder="Ex. Admis en classe supérieure"
+          value={form.decision}
+          onChangeText={(t) => set("decision", t)}
+        />
+      </Section>
+    </>
+  );
 
   return (
     <View className="flex-1 bg-page">
@@ -493,16 +613,11 @@ export default function NouvelleInscription() {
                   disabled={!reachable || active}
                   onPress={() => goTo(i as Step)}
                   accessibilityRole="button"
-                  accessibilityState={{
-                    selected: active,
-                    disabled: !reachable,
-                  }}
+                  accessibilityState={{ selected: active, disabled: !reachable }}
                   accessibilityLabel={`Étape ${i + 1} : ${s.title}`}
                   className="flex-1 active:opacity-80"
                 >
-                  <View
-                    className={`h-1.5 rounded-full ${active || done ? "bg-primary" : "bg-line"}`}
-                  />
+                  <View className={`h-1.5 rounded-full ${active || done ? "bg-primary" : "bg-line"}`} />
                   <View className="mt-1.5 flex-row items-center gap-1">
                     <Ionicons
                       name={done ? "checkmark-circle" : s.icon}
@@ -523,10 +638,7 @@ export default function NouvelleInscription() {
         )}
       </FixedHeader>
 
-      <KeyboardAvoidingView
-        className="flex-1"
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
+      <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <ScrollView
           ref={scrollRef}
           contentContainerStyle={{ paddingTop: 12, paddingBottom: 24 }}
@@ -538,7 +650,7 @@ export default function NouvelleInscription() {
               <>
                 <Section title="Inscription">
                   <Segmented
-                    label="Type *"
+                    label="Type d'inscription *"
                     value={form.type}
                     options={TYPES_INSCRIPTION}
                     onChange={changeType}
@@ -547,38 +659,21 @@ export default function NouvelleInscription() {
                     <Select
                       label="Élève *"
                       icon="person-outline"
-                      placeholder={
-                        eleves
-                          ? "Sélectionner un élève"
-                          : "Chargement des élèves…"
-                      }
+                      placeholder={eleves ? "Sélectionner un élève" : "Chargement des élèves…"}
                       value={form.eleve}
-                      options={(eleves ?? []).map((e) => ({
-                        value: e.public_key,
-                        label: eleveLabel(e),
-                      }))}
+                      options={(eleves ?? []).map((e) => ({ value: e.public_key, label: eleveLabel(e) }))}
                       searchable
                       onChange={(v) => set("eleve", v)}
                       error={errors.eleve ?? listError("élèves")}
                     />
                   )}
-                  <Select
-                    label="Année scolaire *"
-                    icon="calendar-outline"
-                    placeholder={
-                      annees ? "Sélectionner une année" : "Chargement…"
-                    }
-                    value={form.annee}
-                    options={annees ?? []}
-                    onChange={(v) => set("annee", v)}
-                    error={errors.annee ?? listError("années")}
-                  />
                 </Section>
 
                 {/* Nouvelle inscription seulement : l'élève réinscrit est déjà connu */}
                 {!reinscription && (
                   <>
                     <Section title="Identité">
+                      <PhotoPicker label="Photo de l'élève" value={photo} onChange={setPhoto} />
                       <Input
                         label="Nom *"
                         icon="person-outline"
@@ -600,9 +695,7 @@ export default function NouvelleInscription() {
                       <DateField
                         label="Date de naissance"
                         value={form.birthDay}
-                        defaultValue={
-                          new Date(new Date().getFullYear() - 10, 0, 1)
-                        }
+                        defaultValue={new Date(new Date().getFullYear() - 10, 0, 1)}
                         maximumDate={new Date()}
                         onChange={(d) => set("birthDay", d)}
                       />
@@ -627,10 +720,7 @@ export default function NouvelleInscription() {
                         icon="flag-outline"
                         placeholder="Sélectionner une nationalité…"
                         value={form.nationality}
-                        options={NATIONALITES.map((n) => ({
-                          value: n,
-                          label: n,
-                        }))}
+                        options={NATIONALITES.map((n) => ({ value: n, label: n }))}
                         searchable
                         onChange={(v) => set("nationality", v)}
                       />
@@ -638,10 +728,8 @@ export default function NouvelleInscription() {
                         label="Matricule national"
                         icon="barcode-outline"
                         placeholder="Ex. 07055027R"
-                        value={form.matriculeNational}
-                        onChangeText={(t) =>
-                          set("matriculeNational", t.toUpperCase())
-                        }
+                        value={form.nationalMat}
+                        onChangeText={(t) => set("nationalMat", t.toUpperCase())}
                         autoCapitalize="characters"
                         autoCorrect={false}
                       />
@@ -660,23 +748,22 @@ export default function NouvelleInscription() {
                         label="Résidence (Ville/Commune)"
                         icon="business-outline"
                         placeholder="Ex. Cocody"
-                        value={form.city}
-                        onChangeText={(t) => set("city", t)}
+                        value={form.residence}
+                        onChangeText={(t) => set("residence", t)}
                       />
                       <Input
                         label="Quartier"
                         icon="home-outline"
                         placeholder="Ex. Angré"
-                        value={form.residence}
-                        onChangeText={(t) => set("residence", t)}
+                        value={form.city}
+                        onChangeText={(t) => set("city", t)}
                       />
                       <Input
                         label="Téléphone"
                         icon="call-outline"
-                        placeholder="Ex. 07 07 00 00 00"
+                        {...PHONE_INPUT}
                         value={form.phone}
-                        onChangeText={(t) => set("phone", t)}
-                        keyboardType="phone-pad"
+                        onChangeText={(t) => set("phone", toPhone(t))}
                         error={errors.phone}
                       />
                       <Select
@@ -684,10 +771,7 @@ export default function NouvelleInscription() {
                         icon="water-outline"
                         placeholder="Groupe sanguin"
                         value={form.groupeSang}
-                        options={GROUPES_SANGUINS.map((g) => ({
-                          value: g,
-                          label: g,
-                        }))}
+                        options={GROUPES_SANGUINS.map((g) => ({ value: g, label: g }))}
                         onChange={(v) => set("groupeSang", v)}
                       />
                       <Input
@@ -701,108 +785,12 @@ export default function NouvelleInscription() {
                     </Section>
                   </>
                 )}
+
+                {scolarite}
               </>
             )}
 
-            {/* Scolarité : 2e étape d'une nouvelle inscription, ou suite de l'écran de réinscription */}
-            {(step === 1 || reinscription) && (
-              <>
-                <Section title="Parcours">
-                  {!reinscription && (
-                    <Input
-                      label="Ancien établissement"
-                      icon="business-outline"
-                      placeholder="Ex. Lycée moderne de Cocody"
-                      value={form.ancienEcole}
-                      onChangeText={(t) => set("ancienEcole", t)}
-                    />
-                  )}
-                  <Select
-                    label="Niveau précédent"
-                    icon="arrow-undo-outline"
-                    placeholder={
-                      niveaux
-                        ? "Sélectionner le niveau précédent"
-                        : "Chargement…"
-                    }
-                    value={form.niveauPrecedant}
-                    options={niveaux ?? []}
-                    searchable
-                    onChange={(v) => set("niveauPrecedant", v)}
-                  />
-                </Section>
-
-                <Section title="Niveau et classe">
-                  <Select
-                    label="Niveau actuel *"
-                    icon="layers-outline"
-                    placeholder={
-                      niveaux ? "Sélectionner le niveau actuel" : "Chargement…"
-                    }
-                    value={form.niveauActuel}
-                    options={niveaux ?? []}
-                    searchable
-                    onChange={(v) => {
-                      set("niveauActuel", v);
-                      set("classe", ""); // la classe dépend du niveau
-                    }}
-                    error={errors.niveauActuel ?? listError("niveaux")}
-                  />
-                  <Select
-                    label="Classe *"
-                    icon="school-outline"
-                    placeholder={
-                      !classes
-                        ? "Chargement…"
-                        : !form.niveauActuel
-                          ? "Choisissez d'abord le niveau actuel"
-                          : !classOptions.length
-                            ? "Aucune classe enregistrée"
-                            : allClasses
-                              ? "Aucune classe de ce niveau : toutes les classes"
-                              : "Sélectionner une classe"
-                    }
-                    value={form.classe}
-                    options={form.niveauActuel ? classOptions : []}
-                    searchable
-                    onChange={(v) => set("classe", v)}
-                    error={errors.classe ?? listError("classes")}
-                  />
-                </Section>
-
-                <Section title="Statut">
-                  <Segmented
-                    label="Affectation *"
-                    value={form.affectation}
-                    options={AFFECTATIONS}
-                    onChange={(v) => set("affectation", v)}
-                  />
-                  <Segmented
-                    label="Régime *"
-                    value={form.regime}
-                    options={REGIMES}
-                    onChange={(v) => set("regime", v)}
-                  />
-                  <CheckboxRow
-                    checked={form.redoublant}
-                    onToggle={() => set("redoublant", !form.redoublant)}
-                    title="Redoublant"
-                    description="L'élève reprend le même niveau"
-                  />
-                  <View className="mt-4">
-                    <Input
-                      label="Décision fin d'année"
-                      icon="ribbon-outline"
-                      placeholder="Ex. Admis en classe supérieure"
-                      value={form.decision}
-                      onChangeText={(t) => set("decision", t)}
-                    />
-                  </View>
-                </Section>
-              </>
-            )}
-
-            {step === 2 && (
+            {step === 1 && (
               <Section title="Parent ou tuteur">
                 <Input
                   label="Nom du parent/tuteur"
@@ -823,18 +811,16 @@ export default function NouvelleInscription() {
                 <Input
                   label="Téléphone du parent/tuteur"
                   icon="call-outline"
-                  placeholder="Ex. 07 07 00 00 00"
+                  {...PHONE_INPUT}
                   value={form.phoneParent}
-                  onChangeText={(t) => set("phoneParent", t)}
-                  keyboardType="phone-pad"
+                  onChangeText={(t) => set("phoneParent", toPhone(t))}
                   error={errors.phoneParent}
                 />
                 <Select
                   label="Lien de parenté"
                   icon="git-merge-outline"
-                  placeholder="Lien de parenté"
                   value={form.lienParent}
-                  options={LIENS}
+                  options={LIENS_PARENT}
                   onChange={(v) => set("lienParent", v)}
                 />
                 <Input
@@ -862,9 +848,7 @@ export default function NouvelleInscription() {
                 className="h-[54px] flex-1 flex-row items-center justify-center gap-2 rounded-2xl border border-line bg-white active:opacity-80"
               >
                 <Ionicons name="chevron-back" size={18} color="#2B5EA8" />
-                <Text className="font-inter-semibold text-base text-primary">
-                  Précédent
-                </Text>
+                <Text className="font-inter-semibold text-base text-primary">Précédent</Text>
               </Pressable>
             )}
             <Pressable
@@ -876,19 +860,9 @@ export default function NouvelleInscription() {
                 <ActivityIndicator color="#FFFFFF" />
               ) : (
                 <>
-                  {last && (
-                    <Ionicons name="save-outline" size={18} color="#FFFFFF" />
-                  )}
-                  <Text className="font-inter-semibold text-base text-white">
-                    {last ? "Créer" : "Suivant"}
-                  </Text>
-                  {!last && (
-                    <Ionicons
-                      name="chevron-forward"
-                      size={18}
-                      color="#FFFFFF"
-                    />
-                  )}
+                  {last && <Ionicons name="save-outline" size={18} color="#FFFFFF" />}
+                  <Text className="font-inter-semibold text-base text-white">{last ? "Créer" : "Suivant"}</Text>
+                  {!last && <Ionicons name="chevron-forward" size={18} color="#FFFFFF" />}
                 </>
               )}
             </Pressable>
@@ -900,9 +874,7 @@ export default function NouvelleInscription() {
             hitSlop={6}
             className="items-center py-1 active:opacity-70"
           >
-            <Text className="font-inter-semibold text-[14px] text-muted">
-              Annuler
-            </Text>
+            <Text className="font-inter-semibold text-[14px] text-muted">Annuler</Text>
           </Pressable>
         </View>
       </KeyboardAvoidingView>
@@ -915,9 +887,7 @@ export default function NouvelleInscription() {
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <View className="rounded-3xl bg-white p-5 shadow-sm">
-      <Text className="mb-4 font-inter-bold text-[12px] uppercase tracking-wider text-primary">
-        {title}
-      </Text>
+      <Text className="mb-4 font-inter-bold text-[12px] uppercase tracking-wider text-primary">{title}</Text>
       {children}
     </View>
   );

@@ -1,4 +1,5 @@
 import { getMe, User } from "@/api/auth";
+import { useSegments } from "expo-router";
 import { Annee, AnneeData } from "@/api/annees";
 import { apiErrorMessage } from "@/api/client";
 import Button from "@/components/ui/Button";
@@ -10,12 +11,12 @@ import { yearLabel } from "@/utils/dates";
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
 import {
-    Modal,
-    Platform,
-    Pressable,
-    ScrollView,
-    Text,
-    View,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -68,6 +69,8 @@ type FormProps = {
 function YearForm({ year, existing, onClose, onSave }: FormProps) {
   const insets = useSafeAreaInsets();
   const isEdit = !!year;
+  // Admin école : l'établissement est celui du compte, envoyé sans être affiché
+  const hideSchool = useSegments()[0] === "(adminschool)";
 
   const [me, setMe] = useState<User | null>(null);
   const [school, setSchool] = useState(year?.etab_public_key ?? "");
@@ -117,7 +120,10 @@ function YearForm({ year, existing, onClose, onSave }: FormProps) {
     if (saving) return;
     const next: Errors = {};
 
-    if (!school) next.school = "Choisis un établissement";
+    if (!school)
+      next.school = hideSchool
+        ? "Établissement du compte introuvable : reconnectez-vous puis réessayez"
+        : "Choisis un établissement";
     if (!start) next.start = "Choisis la date de début";
     if (!end) next.end = "Choisis la date de fin";
     if (start && end && end <= start)
@@ -125,7 +131,9 @@ function YearForm({ year, existing, onClose, onSave }: FormProps) {
 
     setErrors(next);
     if (Object.keys(next).length > 0) {
-      showFormError();
+      // Champ masqué : son erreur ne peut pas s'afficher sous le champ
+      if (hideSchool && next.school) showToast(next.school, "error");
+      else showFormError();
       return;
     }
 
@@ -161,7 +169,9 @@ function YearForm({ year, existing, onClose, onSave }: FormProps) {
           <Text numberOfLines={1} className="font-inter text-xs text-muted">
             {isEdit && year
               ? `${year.name} · ${year.etab_name}`
-              : "Renseigne l'établissement et les dates"}
+              : hideSchool
+                ? "Renseignez les dates de l'année"
+                : "Renseigne l'établissement et les dates"}
           </Text>
         </View>
         <Pressable
@@ -180,17 +190,19 @@ function YearForm({ year, existing, onClose, onSave }: FormProps) {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <Select
-          label="Établissement"
-          placeholder="Choisir un établissement"
-          value={school}
-          options={options}
-          onChange={(v) => {
-            setSchool(v);
-            clear("school");
-          }}
-          error={errors.school}
-        />
+        {!hideSchool && (
+          <Select
+            label="Établissement"
+            placeholder="Choisir un établissement"
+            value={school}
+            options={options}
+            onChange={(v) => {
+              setSchool(v);
+              clear("school");
+            }}
+            error={errors.school}
+          />
+        )}
 
         <DateField
           label="Date de début"

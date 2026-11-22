@@ -1,6 +1,5 @@
 import {
   AcademicYear,
-  INITIAL_PERIODS,
   INITIAL_YEARS,
   Period,
 } from "@/data/academic";
@@ -37,7 +36,7 @@ const closeOthers = (list: AcademicYear[], school: string, keepId: string) =>
 
 export function AcademicProvider({ children }: { children: ReactNode }) {
   const [years, setYears] = useState<AcademicYear[]>(INITIAL_YEARS);
-  const [periods, setPeriods] = useState<Period[]>(INITIAL_PERIODS);
+  const [periods, setPeriods] = useState<Period[]>([]) // plus de périodes fictives : les vraies viennent de l'API;
 
   /* ----- Années ----- */
   const addYear = useCallback((data: YearData) => {

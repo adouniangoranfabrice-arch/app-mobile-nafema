@@ -37,7 +37,14 @@
       ],
       "expo-font",
       "@react-native-community/datetimepicker",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "NAFEMA accède à vos photos pour ajouter la photo d'un élève.",
+          "cameraPermission": "NAFEMA utilise l'appareil photo pour photographier un élève lors de son inscription."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

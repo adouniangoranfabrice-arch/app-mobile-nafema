@@ -1,3 +1,4 @@
+import { PHONE_ERROR, PHONE_LENGTH, PHONE_PLACEHOLDER, isPhone, toPhone } from "@/utils/phone";
 import CheckboxRow from "@/components/ui/CheckboxRow";
 import DateField from "@/components/ui/DateField";
 import { FormSheet, SectionTitle, SheetModal } from "@/components/ui/FormSheet";
@@ -131,6 +132,7 @@ function EntityForm({
       t = raw.toLowerCase().replace(/\s+/g, "-");
       setSlugEdited(true);
     } else if (f.type === "number") t = raw.replace(/[^0-9]/g, "");
+    else if (f.type === "phone") t = toPhone(raw);
     setValue(f.key, t);
   };
 
@@ -155,8 +157,8 @@ function EntityForm({
         next[f.key] = "Lettres majuscules, chiffres et tirets uniquement";
       } else if (f.type === "email" && !/^\S+@\S+\.\S+$/.test(v)) {
         next[f.key] = "Adresse e-mail invalide";
-      } else if (f.type === "phone" && !/^[+0-9\s().-]{8,20}$/.test(v)) {
-        next[f.key] = "Numéro de téléphone invalide";
+      } else if (f.type === "phone" && !isPhone(v)) {
+        next[f.key] = PHONE_ERROR;
       } else if (f.type === "number" && !/^\d+$/.test(v)) {
         next[f.key] = "Nombre entier positif attendu";
       } else if (f.type === "date" && f.past && fromISO(v) > new Date()) {
@@ -266,7 +268,8 @@ function EntityForm({
         <Input
           label={label}
           icon={icon}
-          placeholder={f.placeholder}
+          placeholder={f.type === "phone" ? PHONE_PLACEHOLDER : f.placeholder}
+          maxLength={f.type === "phone" ? PHONE_LENGTH : undefined}
           value={String(values[f.key] ?? "")}
           onChangeText={(t) => onText(f, t)}
           isPassword={f.type === "password"}
@@ -274,7 +277,7 @@ function EntityForm({
             f.type === "number"
               ? "number-pad"
               : f.type === "phone"
-                ? "phone-pad"
+                ? "number-pad"
                 : f.type === "email"
                   ? "email-address"
                   : "default"
