@@ -5,7 +5,10 @@ import { Eleve, getAllEleves } from "@/api/eleves";
 import { getSalles, Salle } from "@/api/salles";
 import { currentYear, ofYear } from "@/hooks/use-school-dashboard";
 import { ofSchool } from "@/utils/school";
+import { niveauRank } from "@/utils/niveaux";
 import { normalize } from "@/utils/text";
+
+export { niveauRank };
 
 /** Une classe de l'année avec ses élèves */
 export type ClassStat = { classe: Classe; students: Eleve[]; count: number; capacity: number };
@@ -36,37 +39,6 @@ export function salleLabel(c: Pick<Classe, "salle_name" | "salle_slug">) {
 }
 
 export const eleveName = (e: Eleve) => `${e.nom} ${e.prenoms}`.trim() || "Élève sans nom";
-
-/**
- * Rang d'un niveau dans la scolarité : maternelle, primaire, puis 6e → 5e → 4e → 3e → 2nde → 1re → Tle.
- * Accepte « 6ème », « Sixième », « 2nde », « Seconde (2ND) », « Tle D », « Terminale »…
- */
-export function niveauRank(name: string): number {
-  const n = ` ${normalize(name)} `;
-  const has = (re: RegExp) => re.test(n);
-  // Maternelle
-  if (has(/petite section|[^a-z]ps[^a-z]/)) return 1;
-  if (has(/moyenne section|[^a-z]ms[^a-z]/)) return 2;
-  if (has(/grande section|[^a-z]gs[^a-z]/)) return 3;
-  // Primaire
-  if (has(/[^a-z]cp ?1|cours preparatoire 1/)) return 4;
-  if (has(/[^a-z]cp ?2|cours preparatoire 2/)) return 5;
-  if (has(/[^a-z]cp[^a-z]|cours preparatoire/)) return 4;
-  if (has(/[^a-z]ce ?1|cours elementaire 1/)) return 6;
-  if (has(/[^a-z]ce ?2|cours elementaire 2/)) return 7;
-  if (has(/[^a-z]cm ?1|cours moyen 1/)) return 8;
-  if (has(/[^a-z]cm ?2|cours moyen 2/)) return 9;
-  // Collège
-  if (has(/sixi|[^a-z0-9]6 ?(e|eme|em)[^a-z]/)) return 10;
-  if (has(/cinqui|[^a-z0-9]5 ?(e|eme|em)[^a-z]/)) return 11;
-  if (has(/quatri|[^a-z0-9]4 ?(e|eme|em)[^a-z]/)) return 12;
-  if (has(/troisi|[^a-z0-9]3 ?(e|eme|em)[^a-z]/)) return 13;
-  // Lycée
-  if (has(/second|[^a-z0-9]2 ?(nd|nde|de)[^a-z]/)) return 14;
-  if (has(/premi|[^a-z0-9]1 ?(er|ere|re)[^a-z]/)) return 15;
-  if (has(/termin|[^a-z]tle[^a-z]/)) return 16;
-  return 99; // inconnu : à la fin
-}
 
 /** Classes dans l'ordre de la scolarité (6e en premier, Tle en dernier), puis par nom : 6e 1, 6e 2… */
 const byScolarite = (a: Classe, b: Classe) => {

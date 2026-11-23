@@ -1,7 +1,9 @@
 import { anneeStatus, getAllAnnees } from "@/api/annees";
 import { LANGUES_V2 } from "@/api/classes";
+import { getMe } from "@/api/auth";
 import { apiErrorMessage } from "@/api/client";
 import { Eleve, eleveLabel, getAllEleves } from "@/api/eleves";
+import { getEtablissement } from "@/api/etablissements";
 import { Frais, getFrais, getFraisDetail } from "@/api/frais";
 import {
   AFFECTATIONS,
@@ -16,7 +18,7 @@ import {
   TYPES_INSCRIPTION,
   TYPES_PAIEMENT,
 } from "@/api/inscriptions";
-import { getNiveaux } from "@/api/niveaux";
+import { getNiveaux, Niveau } from "@/api/niveaux";
 import { getSeries } from "@/api/series";
 import DateField from "@/components/ui/DateField";
 import FixedHeader from "@/components/ui/FixedHeader";
@@ -26,7 +28,7 @@ import Segmented from "@/components/ui/Segmented";
 import Select, { Option } from "@/components/ui/Select";
 import { showToast } from "@/components/ui/Toast";
 import { toISO } from "@/organisation/helpers";
-import { fieldsFor } from "@/utils/niveaux";
+import { fieldsFor, niveauRank, niveauxPourCategorie, STAGE_LABELS } from "@/utils/niveaux";
 import { PHONE_ERROR, PHONE_INPUT, isPhone, toPhone } from "@/utils/phone";
 import { normalize } from "@/utils/text";
 import { Ionicons } from "@expo/vector-icons";
@@ -139,10 +141,22 @@ type FraisNiveau = Frais & { required: boolean; tranchable: boolean };
 const isRedoublant = (f: Form) => !!f.niveauPrecedant && f.niveauPrecedant === f.niveauActuel;
 
 /** Contrôle d'une étape. Obligatoires (comme sur le site) : type, nom, prénoms, niveau actuel, régime */
-function validate(step: Step, f: Form, needs: { lv2: boolean; serie: boolean }): Errors {
+function validate(
+  step: Step,
+  f: Form,
+  needs: { lv2: boolean; serie: boolean },
+  rankOf: (niveauKey: string) => number,
+): Errors {
   const e: Errors = {};
   const scolarite = () => {
     if (!f.niveauActuel) e.niveauActuel = "Choisissez le niveau actuel";
+    else if (f.niveauPrecedant && f.niveauPrecedant !== f.niveauActuel) {
+      // Niveaux reconnus seulement (rang 99 : nom inconnu, pas de contrôle)
+      const avant = rankOf(f.niveauPrecedant);
+      const maintenant = rankOf(f.niveauActuel);
+      if (avant < 99 && maintenant < 99 && maintenant < avant)
+        e.niveauActuel = "Le niveau actuel ne peut pas être inférieur au niveau précédent : vérifiez votre choix";
+    }
     if (needs.serie && !f.serie) e.serie = "Choisissez la série";
     if (!f.regime) e.regime = "Choisissez le régime";
   };
@@ -226,7 +240,9 @@ export default function NouvelleInscription() {
   const [photo, setPhoto] = useState<PhotoFile | null>(null);
 
   // Listes de la base, chargées à l'ouverture
-  const [niveaux, setNiveaux] = useState<Option[] | null>(null);
+  const [allNiveaux, setAllNiveaux] = useState<Niveau[] | null>(null);
+  // Catégorie de l'établissement du compte (prescolaire, primaire, college, lycee, tous) : "" si inconnue
+  const [catego, setCatego] = useState("");
   const [series, setSeries] = useState<Option[] | null>(null);
   const [eleves, setEleves] = useState<Eleve[] | null>(null);
   const [frais, setFrais] = useState<Frais[] | null>(null);
@@ -239,11 +255,18 @@ export default function NouvelleInscription() {
       if (active) setFailed((f) => [...f, what]);
     };
     getNiveaux()
-      .then((all) => active && setNiveaux(all.map((n) => ({ value: n.public_key, label: n.name }))))
+      .then((all) => active && setAllNiveaux(all))
       .catch(() => {
-        setNiveaux([]);
+        setAllNiveaux([]);
         fail("niveaux");
       });
+    // Catégorie : dans le détail de l'établissement du compte (le profil ne la donne pas)
+    getMe()
+      .then((me) => (me.etablissement?.public_key ? getEtablissement(me.etablissement.public_key) : null))
+      .then((etab) => {
+        if (active && etab) setCatego(etab.catego);
+      })
+      .catch(() => {}); // sans catégorie : tous les niveaux
     getSeries()
       .then(
         (all) =>
@@ -289,8 +312,16 @@ export default function NouvelleInscription() {
   const reinscription = form.type === REINSCRIPTION;
   const steps = reinscription ? STEPS_REINSCRIPTION : STEPS;
 
+  // Niveaux proposés selon la catégorie de l'établissement, dans l'ordre de la scolarité
+  const choix = allNiveaux ? niveauxPourCategorie(allNiveaux, catego) : null;
+  const toOptions = (list: Niveau[]): Option[] => list.map((n) => ({ value: n.public_key, label: n.name }));
+  const niveaux = choix ? toOptions(choix.actuel) : null;
+  const niveauxPrecedents = choix ? toOptions(choix.precedent) : null;
+  const niveauxHint = choix?.stage ? `Niveaux ${STAGE_LABELS[choix.stage]}, selon la catégorie de l'établissement` : "";
+  const rankOfKey = (key: string) => niveauRank(allNiveaux?.find((n) => n.public_key === key)?.name ?? "");
+
   // Série et LV2 selon le niveau actuel
-  const niveauName = niveaux?.find((n) => n.value === form.niveauActuel)?.label ?? "";
+  const niveauName = allNiveaux?.find((n) => n.public_key === form.niveauActuel)?.name ?? "";
   const needs = fieldsFor(niveauName);
 
   /* Frais du niveau choisi : leur détail dit s'ils sont obligatoires et fractionnables */
@@ -370,7 +401,7 @@ export default function NouvelleInscription() {
 
   // « Suivant » contrôle l'étape en cours ; on peut toujours revenir en arrière
   const next = () => {
-    const e = validate(step, form, needs);
+    const e = validate(step, form, needs, rankOfKey);
     setErrors(e);
     if (Object.keys(e).length > 0) {
       showToast("Veuillez corriger les champs en rouge.", "error");
@@ -399,7 +430,7 @@ export default function NouvelleInscription() {
     if (saving) return;
     // Tout est contrôlé : on ouvre la première étape qui a une erreur
     for (const s of steps.map((_, i) => i as Step)) {
-      const e = validate(s, form, needs);
+      const e = validate(s, form, needs, rankOfKey);
       if (Object.keys(e).length > 0) {
         setErrors(e);
         goTo(s);
@@ -445,9 +476,9 @@ export default function NouvelleInscription() {
         <Select
           label="Niveau précédent"
           icon="arrow-undo-outline"
-          placeholder={niveaux ? "Sélectionner le niveau précédent" : "Chargement…"}
+          placeholder={niveauxPrecedents ? "Sélectionner le niveau précédent" : "Chargement…"}
           value={form.niveauPrecedant}
-          options={niveaux ?? []}
+          options={niveauxPrecedents ?? []}
           searchable
           onChange={(v) => set("niveauPrecedant", v)}
         />
@@ -461,6 +492,9 @@ export default function NouvelleInscription() {
           onChange={(v) => set("niveauActuel", v)}
           error={errors.niveauActuel ?? listError("niveaux")}
         />
+        {!!niveauxHint && (
+          <Text className="-mt-2 font-inter text-xs text-muted">{niveauxHint}</Text>
+        )}
         {needs.serie && (
           <Select
             label="Série *"
