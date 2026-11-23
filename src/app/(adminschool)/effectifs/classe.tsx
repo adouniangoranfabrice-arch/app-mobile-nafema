@@ -1,4 +1,4 @@
-import { Effectifs, eleveName, lastEffectifs, loadEffectifs, SANS_CLASSE } from "@/api/effectifs";
+import { Effectifs, eleveName, lastEffectifs, loadEffectifs, SANS_CLASSE, salleLabel } from "@/api/effectifs";
 import FixedHeader from "@/components/ui/FixedHeader";
 import SearchBar from "@/components/ui/SearchBar";
 import { SkeletonList } from "@/components/ui/Skeleton";
@@ -66,7 +66,7 @@ export default function EffectifsClasse() {
   const title = stat?.classe.name ?? name ?? "Classe";
   const detail = unassigned
     ? "Élèves à affecter à une classe"
-    : [stat?.classe.niveau_name, stat?.classe.salle_name || "Sans salle"].filter(Boolean).join(" · ");
+    : [stat?.classe.niveau_name, stat ? salleLabel(stat.classe) : ""].filter(Boolean).join(" · ");
 
   return (
     <View className="flex-1 bg-page">

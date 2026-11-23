@@ -1,4 +1,4 @@
-import { Effectifs as Stats, loadEffectifs, SANS_CLASSE } from "@/api/effectifs";
+import { Effectifs as Stats, loadEffectifs, SANS_CLASSE, salleLabel } from "@/api/effectifs";
 import { Card, Fill, Split, Tile } from "@/components/PlatformStats";
 import FixedHeader from "@/components/ui/FixedHeader";
 import { Stagger } from "@/components/ui/MotionView";
@@ -140,7 +140,7 @@ export default function Effectifs() {
                     <ClassCard
                       key={c.classe.public_key}
                       name={c.classe.name}
-                      detail={[c.classe.niveau_name, c.classe.salle_name || "Sans salle"].filter(Boolean).join(" · ")}
+                      detail={[c.classe.niveau_name, salleLabel(c.classe)].filter(Boolean).join(" · ")}
                       capacity={c.capacity}
                       count={c.count}
                       delay={i * 80}
