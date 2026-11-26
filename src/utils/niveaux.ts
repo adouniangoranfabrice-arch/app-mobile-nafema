@@ -60,7 +60,7 @@ export const STAGE_LABELS: Record<Stage, string> = {
   prescolaire: "du préscolaire",
   primaire: "du primaire",
   college: "du collège",
-  lycee: "du lycée",
+  lycee: "de la 6e à la Tle",
 };
 
 /** Le cycle d'un niveau : d'après son nom, sinon d'après le nom de son cycle ("" si inconnu) */
@@ -104,12 +104,21 @@ export const sortNiveaux = <T extends NiveauLike>(list: T[]) =>
  * Niveaux proposés à l'inscription selon la catégorie de l'établissement :
  * - actuel : les niveaux du cycle de l'établissement ;
  * - precedent : les mêmes, plus le dernier niveau du cycle d'avant (élève venant d'un autre établissement).
+ * Exception : un lycée accueille aussi le collège → 6e à Tle pour les deux listes.
  * Catégorie inconnue, « tous les cycles » ou aucun niveau reconnu : tous les niveaux.
  */
 export function niveauxPourCategorie<T extends NiveauLike>(all: T[], catego: string) {
   const sorted = sortNiveaux(all);
   const stage = stageOfCategorie(catego);
   if (!stage) return { actuel: sorted, precedent: sorted, stage: null };
+  if (stage === "lycee") {
+    const secondaire = sorted.filter((n) => {
+      const s = stageOf(n.name, n.cycle_name);
+      return s === "college" || s === "lycee";
+    });
+    if (secondaire.length === 0) return { actuel: sorted, precedent: sorted, stage: null };
+    return { actuel: secondaire, precedent: secondaire, stage };
+  }
   const actuel = sorted.filter((n) => stageOf(n.name, n.cycle_name) === stage);
   if (actuel.length === 0) return { actuel: sorted, precedent: sorted, stage: null };
   const before = STAGES[STAGES.indexOf(stage) - 1];
